@@ -1,0 +1,5 @@
+# Requirements for Mac Screenshot Uploader
+oci==2.112.1
+requests==2.31.0
+pyobjc-framework-Cocoa==10.3.1
+pyobjc-framework-Quartz==10.3.1
