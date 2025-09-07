@@ -386,9 +386,36 @@ class ScreenshotWatcher:
             logger.error(f"Error processing {object_name}: {e}")
             return False
     
-    def run_watcher(self, poll_interval: int = 30):
+    def mark_existing_as_processed(self):
+        """Mark all existing screenshots as processed (skip old screenshots)"""
+        try:
+            response = self.object_storage.list_objects(
+                namespace_name=self.namespace,
+                bucket_name=self.bucket_name,
+                prefix="screenshots/",
+                fields="name"
+            )
+            
+            existing_count = 0
+            for obj in response.data.objects:
+                if obj.name.lower().endswith('.png'):
+                    self.processed_files.add(obj.name)
+                    existing_count += 1
+            
+            self._save_processed_state()
+            logger.info(f"Marked {existing_count} existing screenshots as processed (will skip them)")
+            
+        except Exception as e:
+            logger.error(f"Error marking existing screenshots: {e}")
+
+    def run_watcher(self, poll_interval: int = 30, skip_existing: bool = True):
         """Run the main watcher loop"""
+        if skip_existing:
+            logger.info("🔄 Marking existing screenshots as processed (will only process NEW screenshots)")
+            self.mark_existing_as_processed()
+        
         logger.info(f"Starting screenshot watcher (polling every {poll_interval} seconds)")
+        logger.info("📸 Waiting for NEW screenshots to be uploaded...")
         
         while True:
             try:
