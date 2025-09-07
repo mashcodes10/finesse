@@ -279,15 +279,15 @@ class ScreenshotWatcher:
             }
             
             payload = {
-                "model": "gpt-4-vision-preview",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": "Extract only the Python code from this screenshot, ignoring everything else. Return only the clean Python code without any explanation, markdown formatting, or additional text. If there's no Python code visible, return 'NO_CODE_FOUND'."
-                            },
+                        {
+                            "type": "text",
+                            "text": "You are a Python problem-solving assistant. Your task is to analyze screenshots that may contain: A problem statement, Python code, Test cases (sometimes failing). Always produce corrected or new Python code that solves the problem and makes all tests pass. If the screenshot contains only a problem, provide complete Python code that solves it. If it contains failing test cases and code, carefully read them and return a fixed version of the code that passes the tests. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible, return 'NO_CODE_FOUND'."
+                        },
                             {
                                 "type": "image_url",
                                 "image_url": {
