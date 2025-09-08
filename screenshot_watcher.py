@@ -307,14 +307,14 @@ class ScreenshotWatcher:
             }
             
             payload = {
-                "model": "gpt-5",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
                         "content": content
                     }
                 ],
-                "max_tokens": 3000  # Increased for batch processing
+                "max_completion_tokens": 3000  # Increased for batch processing
             }
             
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
@@ -352,7 +352,7 @@ class ScreenshotWatcher:
             }
             
             payload = {
-                "model": "gpt-5",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
@@ -370,7 +370,7 @@ class ScreenshotWatcher:
                         ]
                     }
                 ],
-                "max_tokens": 2000
+                "max_completion_tokens": 2000
             }
             
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
