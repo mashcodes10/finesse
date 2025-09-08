@@ -176,6 +176,10 @@ class ScreenshotWatcher:
         self.processed_dir = Path("/tmp/processed_screenshots")
         self.processed_dir.mkdir(exist_ok=True)
         
+        # Batch processing configuration
+        self.batch_size = 3  # Wait for 3 screenshots before processing
+        self.pending_screenshots = []  # Queue of screenshots waiting to be processed
+        
         # Keep track of processed files
         self.processed_files = set()
         self.state_file = Path("/tmp/processed_screenshots.json")
@@ -266,6 +270,75 @@ class ScreenshotWatcher:
             logger.error(f"Error downloading {object_name}: {e}")
             return None
     
+    def extract_code_with_openai_batch(self, images_data: List[bytes]) -> Optional[str]:
+        """Extract Python code from multiple screenshots using GPT-5 Vision API"""
+        try:
+            # Encode all images to base64
+            base64_images = []
+            for image_data in images_data:
+                base64_image = base64.b64encode(image_data).decode('utf-8')
+                base64_images.append(base64_image)
+            
+            # Prepare content with multiple images
+            content = [
+                {
+                    "type": "text",
+                    "text": f"You are a Python problem-solving assistant. I'm sending you {len(base64_images)} screenshots that may contain related Python problems, code snippets, or test cases. Analyze all screenshots together to understand the complete context. Your task is to: 1) Understand the overall problem across all screenshots, 2) Identify any code patterns, bugs, or failing tests, 3) Provide a comprehensive Python solution that addresses all the issues shown. If the screenshots show a sequence of related problems or iterations, provide the final optimized solution. If they show unrelated problems, solve each one. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible in any screenshot, return 'NO_CODE_FOUND'."
+                }
+            ]
+            
+            # Add all images to the content
+            for i, base64_image in enumerate(base64_images):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_image}"
+                    }
+                })
+                content.append({
+                    "type": "text",
+                    "text": f"Screenshot {i+1} of {len(base64_images)} ↑"
+                })
+            
+            # Prepare the request
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {openai.api_key}"
+            }
+            
+            payload = {
+                "model": "gpt-5",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": content
+                    }
+                ],
+                "max_tokens": 3000  # Increased for batch processing
+            }
+            
+            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                result = response.json()
+                extracted_text = result['choices'][0]['message']['content'].strip()
+                usage = result.get('usage', {})
+                
+                logger.info(f"GPT-5 batch processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
+                
+                if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
+                    logger.info("No Python code found in screenshot batch")
+                    return None
+                
+                return extracted_text
+            else:
+                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error extracting code with GPT-5 batch: {e}")
+            return None
+
     def extract_code_with_openai(self, image_data: bytes) -> Optional[str]:
         """Extract Python code from screenshot using OpenAI Vision API"""
         try:
@@ -279,7 +352,7 @@ class ScreenshotWatcher:
             }
             
             payload = {
-                "model": "gpt-4o",
+                "model": "gpt-5",
                 "messages": [
                     {
                         "role": "user",
@@ -346,9 +419,74 @@ class ScreenshotWatcher:
             logger.error(f"Error saving extracted code: {e}")
             return None
     
+    def process_screenshot_batch(self, screenshot_names: List[str]):
+        """Process a batch of 3 screenshots together with GPT-5"""
+        logger.info(f"🔄 Processing batch of {len(screenshot_names)} screenshots with GPT-5")
+        
+        try:
+            # Download all screenshots
+            images_data = []
+            for screenshot_name in screenshot_names:
+                image_data = self.download_screenshot(screenshot_name)
+                if image_data:
+                    images_data.append(image_data)
+                else:
+                    logger.warning(f"Failed to download {screenshot_name}")
+            
+            if not images_data:
+                logger.error("No screenshots could be downloaded")
+                return False
+            
+            logger.info(f"📥 Downloaded {len(images_data)} screenshots for batch processing")
+            
+            # Extract code using GPT-5 batch processing
+            extracted_code = self.extract_code_with_openai_batch(images_data)
+            if not extracted_code:
+                logger.info("No code found in screenshot batch")
+                # Mark all as processed
+                for screenshot_name in screenshot_names:
+                    self.processed_files.add(screenshot_name)
+                self._save_processed_state()
+                return True
+            
+            # Save extracted code with batch identifier
+            batch_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            py_filename = f"batch_{batch_timestamp}_{len(screenshot_names)}screenshots.py"
+            py_filepath = self.processed_dir / py_filename
+            
+            header = f"""# Extracted from {len(screenshot_names)} screenshots processed together with GPT-5
+# Screenshots: {', '.join(screenshot_names)}
+# Processed at: {datetime.now().isoformat()}
+# Batch processing - GPT-5 analyzed all screenshots for comprehensive solution
+
+"""
+            
+            with open(py_filepath, 'w', encoding='utf-8') as f:
+                f.write(header + extracted_code)
+            
+            logger.info(f"💾 Saved batch extracted code to: {py_filename}")
+            
+            # Send notification
+            screenshot_list = '\n'.join([f"   • {name}" for name in screenshot_names])
+            message = f"🚀 **GPT-5 Batch Processing Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            self.notifier.send_notification(message, py_filename, extracted_code)
+            
+            # Mark all screenshots as processed
+            for screenshot_name in screenshot_names:
+                self.processed_files.add(screenshot_name)
+            self._save_processed_state()
+            
+            logger.info(f"✅ Successfully processed batch of {len(screenshot_names)} screenshots")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error processing screenshot batch: {e}")
+            return False
+
     def process_screenshot(self, object_name: str):
-        """Process a single screenshot"""
-        logger.info(f"Processing screenshot: {object_name}")
+        """Process a single screenshot (fallback method)"""
+        logger.info(f"Processing single screenshot: {object_name}")
         
         try:
             # Download screenshot
@@ -422,11 +560,24 @@ class ScreenshotWatcher:
                 # Get new screenshots
                 new_screenshots = self.get_new_screenshots()
                 
-                # Process each new screenshot
-                for screenshot in new_screenshots:
-                    self.process_screenshot(screenshot)
-                    # Small delay between processing
-                    time.sleep(2)
+                if new_screenshots:
+                    # Add new screenshots to pending queue
+                    self.pending_screenshots.extend(new_screenshots)
+                    logger.info(f"📸 Added {len(new_screenshots)} screenshots to queue. Total pending: {len(self.pending_screenshots)}")
+                    
+                    # Check if we have enough for batch processing
+                    if len(self.pending_screenshots) >= self.batch_size:
+                        # Process a batch of 3 screenshots
+                        batch_to_process = self.pending_screenshots[:self.batch_size]
+                        self.pending_screenshots = self.pending_screenshots[self.batch_size:]
+                        
+                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots with GPT-5")
+                        self.process_screenshot_batch(batch_to_process)
+                        
+                        # Delay between batches
+                        time.sleep(5)
+                    else:
+                        logger.info(f"⏳ Waiting for more screenshots. Need {self.batch_size - len(self.pending_screenshots)} more for batch processing")
                 
                 if not new_screenshots:
                     logger.debug("No new screenshots found")
