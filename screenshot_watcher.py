@@ -418,6 +418,57 @@ class ScreenshotWatcher:
         except Exception as e:
             logger.error(f"Error saving extracted code: {e}")
             return None
+
+    def _display_extracted_code(self, code: str, screenshot_names: List[str], filename: str, is_batch: bool = False):
+        """Display extracted Python code in terminal with nice formatting"""
+        try:
+            # Create a nice terminal display
+            border_char = "="
+            border_length = 80
+            
+            # Header
+            print("\n" + border_char * border_length)
+            if is_batch:
+                print(f"🚀 GPT-5 BATCH PROCESSING RESULT ({len(screenshot_names)} screenshots)")
+            else:
+                print(f"🐍 PYTHON CODE EXTRACTED")
+            print(border_char * border_length)
+            
+            # Screenshot info
+            if is_batch:
+                print(f"📸 Screenshots processed:")
+                for i, name in enumerate(screenshot_names, 1):
+                    print(f"   {i}. {name}")
+            else:
+                print(f"📸 From: {screenshot_names[0]}")
+            
+            print(f"📝 Saved as: {filename}")
+            print(f"⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Code section
+            print(f"\n{'🐍 EXTRACTED PYTHON CODE:':^{border_length}}")
+            print(border_char * border_length)
+            
+            # Display code with line numbers
+            code_lines = code.split('\n')
+            for i, line in enumerate(code_lines, 1):
+                # Add line numbers for better readability
+                line_num = f"{i:3d}| "
+                print(f"{line_num}{line}")
+            
+            print(border_char * border_length)
+            print(f"✅ Code processing complete! File saved to: /tmp/processed_screenshots/{filename}")
+            print(border_char * border_length + "\n")
+            
+            # Also log for file logging
+            logger.info("🐍 EXTRACTED PYTHON CODE DISPLAYED IN TERMINAL")
+            
+        except Exception as e:
+            logger.error(f"Error displaying extracted code: {e}")
+            # Fallback: just log the code
+            logger.info("EXTRACTED CODE:")
+            for line in code.split('\n'):
+                logger.info(line)
     
     def process_screenshot_batch(self, screenshot_names: List[str]):
         """Process a batch of 3 screenshots together with GPT-5"""
@@ -466,6 +517,9 @@ class ScreenshotWatcher:
             
             logger.info(f"💾 Saved batch extracted code to: {py_filename}")
             
+            # Display the extracted code in terminal
+            self._display_extracted_code(extracted_code, screenshot_names, py_filename, is_batch=True)
+            
             # Send notification
             screenshot_list = '\n'.join([f"   • {name}" for name in screenshot_names])
             message = f"🚀 **GPT-5 Batch Processing Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -507,6 +561,9 @@ class ScreenshotWatcher:
             py_filename = self.save_extracted_code(extracted_code, object_name)
             if not py_filename:
                 return False
+            
+            # Display the extracted code in terminal
+            self._display_extracted_code(extracted_code, [object_name], py_filename, is_batch=False)
             
             # Send notification
             message = f"🐍 **Python Code Extracted!**\n\n📸 From: `{object_name}`\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
