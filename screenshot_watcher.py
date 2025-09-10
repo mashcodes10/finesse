@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Screenshot Watcher for Oracle Cloud VM
-Polls Oracle Cloud Object Storage for new screenshots, processes them with OpenAI Vision API,
+Polls Oracle Cloud Object Storage for new screenshots, processes them with Claude 4 Sonnet Vision API,
 and sends results to phone via ntfy or Telegram
 """
 
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 import oci
 from oci.auth.signers import InstancePrincipalsSecurityTokenSigner
-import openai
+import anthropic
 
 # Configure logging
 logging.basicConfig(
@@ -177,7 +177,7 @@ class ScreenshotWatcher:
         self.processed_dir.mkdir(exist_ok=True)
         
         # Batch processing configuration
-        self.batch_size = 3  # Wait for 3 screenshots before processing
+        self.batch_size = 4  # Wait for 4 screenshots before processing
         self.pending_screenshots = []  # Queue of screenshots waiting to be processed
         
         # Keep track of processed files
@@ -185,11 +185,13 @@ class ScreenshotWatcher:
         self.state_file = Path("/tmp/processed_screenshots.json")
         self._load_processed_state()
         
-        # Initialize OpenAI
-        openai.api_key = os.getenv('OPENAI_API_KEY')
-        if not openai.api_key:
-            logger.error("OPENAI_API_KEY environment variable not set")
+        # Initialize Claude
+        self.claude_api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not self.claude_api_key:
+            logger.error("ANTHROPIC_API_KEY environment variable not set")
             sys.exit(1)
+        
+        self.claude_client = anthropic.Anthropic(api_key=self.claude_api_key)
         
         # Initialize notification sender
         self.notifier = NotificationSender()
@@ -270,8 +272,8 @@ class ScreenshotWatcher:
             logger.error(f"Error downloading {object_name}: {e}")
             return None
     
-    def extract_code_with_openai_batch(self, images_data: List[bytes]) -> Optional[str]:
-        """Extract Python code from multiple screenshots using GPT-5 Vision API"""
+    def extract_code_with_claude_batch(self, images_data: List[bytes]) -> Optional[str]:
+        """Extract Python code from multiple screenshots using Claude 4 Sonnet Vision API"""
         try:
             # Encode all images to base64
             base64_images = []
@@ -279,118 +281,91 @@ class ScreenshotWatcher:
                 base64_image = base64.b64encode(image_data).decode('utf-8')
                 base64_images.append(base64_image)
             
-            # Prepare content with multiple images
-            content = [
-                {
-                    "type": "text",
-                    "text": f"You are a Python problem-solving assistant. I'm sending you {len(base64_images)} screenshots that may contain related Python problems, code snippets, or test cases. Analyze all screenshots together to understand the complete context. Your task is to: 1) Understand the overall problem across all screenshots, 2) Identify any code patterns, bugs, or failing tests, 3) Provide a comprehensive Python solution that addresses all the issues shown. If the screenshots show a sequence of related problems or iterations, provide the final optimized solution. If they show unrelated problems, solve each one. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible in any screenshot, return 'NO_CODE_FOUND'."
-                }
+            # Prepare content with multiple images for Claude
+            content_parts = [
+                f"You are a Python problem-solving assistant. I'm sending you {len(base64_images)} screenshots that may contain related Python problems, code snippets, or test cases. Analyze all screenshots together to understand the complete context. Your task is to: 1) Understand the overall problem across all screenshots, 2) Identify any code patterns, bugs, or failing tests, 3) Provide a comprehensive Python solution that addresses all the issues shown. If the screenshots show a sequence of related problems or iterations, provide the final optimized solution. If they show unrelated problems, solve each one. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible in any screenshot, return 'NO_CODE_FOUND'."
             ]
             
             # Add all images to the content
             for i, base64_image in enumerate(base64_images):
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64_image}"
+                content_parts.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": base64_image
                     }
                 })
-                content.append({
-                    "type": "text",
-                    "text": f"Screenshot {i+1} of {len(base64_images)} ↑"
-                })
+                content_parts.append(f"Screenshot {i+1} of {len(base64_images)} ↑")
             
-            # Prepare the request
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {openai.api_key}"
-            }
-            
-            payload = {
-                "model": "gpt-4o",
-                "messages": [
+            # Use Claude API
+            response = self.claude_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=3000,
+                messages=[
                     {
                         "role": "user",
-                        "content": content
+                        "content": content_parts
                     }
-                ],
-                "max_completion_tokens": 3000  # Increased for batch processing
-            }
+                ]
+            )
             
-            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            extracted_text = response.content[0].text.strip()
             
-            if response.status_code == 200:
-                result = response.json()
-                extracted_text = result['choices'][0]['message']['content'].strip()
-                usage = result.get('usage', {})
-                
-                logger.info(f"GPT-5 batch processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
-                
-                if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
-                    logger.info("No Python code found in screenshot batch")
-                    return None
-                
-                return extracted_text
-            else:
-                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+            logger.info(f"Claude 4 Sonnet batch processing successful. Tokens: {response.usage.input_tokens + response.usage.output_tokens}")
+            
+            if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
+                logger.info("No Python code found in screenshot batch")
                 return None
+            
+            return extracted_text
                 
         except Exception as e:
-            logger.error(f"Error extracting code with GPT-5 batch: {e}")
+            logger.error(f"Error extracting code with Claude 4 Sonnet batch: {e}")
             return None
 
-    def extract_code_with_openai(self, image_data: bytes) -> Optional[str]:
-        """Extract Python code from screenshot using OpenAI Vision API"""
+    def extract_code_with_claude(self, image_data: bytes) -> Optional[str]:
+        """Extract Python code from screenshot using Claude 4 Sonnet Vision API"""
         try:
             # Encode image to base64
             base64_image = base64.b64encode(image_data).decode('utf-8')
             
-            # Prepare the request
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {openai.api_key}"
-            }
+            # Prepare content for Claude
+            content_parts = [
+                "You are a Python problem-solving assistant. Your task is to analyze screenshots that may contain: A problem statement, Python code, Test cases (sometimes failing). Always produce corrected or new Python code that solves the problem and makes all tests pass. If the screenshot contains only a problem, provide complete Python code that solves it. If it contains failing test cases and code, carefully read them and return a fixed version of the code that passes the tests. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible, return 'NO_CODE_FOUND'.",
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": base64_image
+                    }
+                }
+            ]
             
-            payload = {
-                "model": "gpt-4o",
-                "messages": [
+            # Use Claude API
+            response = self.claude_client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=2000,
+                messages=[
                     {
                         "role": "user",
-                        "content": [
-                        {
-                            "type": "text",
-                            "text": "You are a Python problem-solving assistant. Your task is to analyze screenshots that may contain: A problem statement, Python code, Test cases (sometimes failing). Always produce corrected or new Python code that solves the problem and makes all tests pass. If the screenshot contains only a problem, provide complete Python code that solves it. If it contains failing test cases and code, carefully read them and return a fixed version of the code that passes the tests. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible, return 'NO_CODE_FOUND'."
-                        },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}"
-                                }
-                            }
-                        ]
+                        "content": content_parts
                     }
-                ],
-                "max_completion_tokens": 2000
-            }
+                ]
+            )
             
-            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            extracted_text = response.content[0].text.strip()
             
-            if response.status_code == 200:
-                result = response.json()
-                extracted_text = result['choices'][0]['message']['content'].strip()
-                
-                if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
-                    logger.info("No Python code found in screenshot")
-                    return None
-                
-                logger.info("Successfully extracted code from screenshot")
-                return extracted_text
-            else:
-                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+            if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
+                logger.info("No Python code found in screenshot")
                 return None
+            
+            logger.info("Successfully extracted code from screenshot with Claude 4 Sonnet")
+            return extracted_text
                 
         except Exception as e:
-            logger.error(f"Error extracting code with OpenAI: {e}")
+            logger.error(f"Error extracting code with Claude 4 Sonnet: {e}")
             return None
     
     def save_extracted_code(self, code: str, original_filename: str) -> str:
@@ -429,7 +404,7 @@ class ScreenshotWatcher:
             # Header
             print("\n" + border_char * border_length)
             if is_batch:
-                print(f"🚀 GPT-5 BATCH PROCESSING RESULT ({len(screenshot_names)} screenshots)")
+                print(f"🚀 CLAUDE 4 SONNET BATCH PROCESSING RESULT ({len(screenshot_names)} screenshots)")
             else:
                 print(f"🐍 PYTHON CODE EXTRACTED")
             print(border_char * border_length)
@@ -471,8 +446,8 @@ class ScreenshotWatcher:
                 logger.info(line)
     
     def process_screenshot_batch(self, screenshot_names: List[str]):
-        """Process a batch of 3 screenshots together with GPT-5"""
-        logger.info(f"🔄 Processing batch of {len(screenshot_names)} screenshots with GPT-5")
+        """Process a batch of 4 screenshots together with Claude 4 Sonnet"""
+        logger.info(f"🔄 Processing batch of {len(screenshot_names)} screenshots with Claude 4 Sonnet")
         
         try:
             # Download all screenshots
@@ -490,8 +465,8 @@ class ScreenshotWatcher:
             
             logger.info(f"📥 Downloaded {len(images_data)} screenshots for batch processing")
             
-            # Extract code using GPT-5 batch processing
-            extracted_code = self.extract_code_with_openai_batch(images_data)
+            # Extract code using Claude 4 Sonnet batch processing
+            extracted_code = self.extract_code_with_claude_batch(images_data)
             if not extracted_code:
                 logger.info("No code found in screenshot batch")
                 # Mark all as processed
@@ -505,10 +480,10 @@ class ScreenshotWatcher:
             py_filename = f"batch_{batch_timestamp}_{len(screenshot_names)}screenshots.py"
             py_filepath = self.processed_dir / py_filename
             
-            header = f"""# Extracted from {len(screenshot_names)} screenshots processed together with GPT-5
+            header = f"""# Extracted from {len(screenshot_names)} screenshots processed together with Claude 4 Sonnet
 # Screenshots: {', '.join(screenshot_names)}
 # Processed at: {datetime.now().isoformat()}
-# Batch processing - GPT-5 analyzed all screenshots for comprehensive solution
+# Batch processing - Claude 4 Sonnet analyzed all screenshots for comprehensive solution
 
 """
             
@@ -522,7 +497,7 @@ class ScreenshotWatcher:
             
             # Send notification
             screenshot_list = '\n'.join([f"   • {name}" for name in screenshot_names])
-            message = f"🚀 **GPT-5 Batch Processing Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            message = f"🚀 **Claude 4 Sonnet Batch Processing Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
             self.notifier.send_notification(message, py_filename, extracted_code)
             
@@ -548,8 +523,8 @@ class ScreenshotWatcher:
             if not image_data:
                 return False
             
-            # Extract code using OpenAI
-            extracted_code = self.extract_code_with_openai(image_data)
+            # Extract code using Claude 4 Sonnet
+            extracted_code = self.extract_code_with_claude(image_data)
             if not extracted_code:
                 logger.info(f"No code found in {object_name}")
                 # Still mark as processed to avoid reprocessing
@@ -624,11 +599,11 @@ class ScreenshotWatcher:
                     
                     # Check if we have enough for batch processing
                     if len(self.pending_screenshots) >= self.batch_size:
-                        # Process a batch of 3 screenshots
+                        # Process a batch of 4 screenshots
                         batch_to_process = self.pending_screenshots[:self.batch_size]
                         self.pending_screenshots = self.pending_screenshots[self.batch_size:]
                         
-                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots with GPT-5")
+                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots with Claude 4 Sonnet")
                         self.process_screenshot_batch(batch_to_process)
                         
                         # Delay between batches
