@@ -84,7 +84,7 @@ def test_claude_batch_api():
                 {
                     "custom_id": "first-prompt-in-my-batch",
                     "params": {
-                        "model": "claude-3-5-haiku-20241022",
+                        "model": "claude-sonnet-4-20250514",
                         "max_tokens": 100,
                         "messages": [
                             {
