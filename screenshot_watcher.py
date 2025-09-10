@@ -283,7 +283,10 @@ class ScreenshotWatcher:
             
             # Prepare content with multiple images for Claude
             content_parts = [
-                f"You are a Python problem-solving assistant. I'm sending you {len(base64_images)} screenshots that may contain related Python problems, code snippets, or test cases. Analyze all screenshots together to understand the complete context. Your task is to: 1) Understand the overall problem across all screenshots, 2) Identify any code patterns, bugs, or failing tests, 3) Provide a comprehensive Python solution that addresses all the issues shown. If the screenshots show a sequence of related problems or iterations, provide the final optimized solution. If they show unrelated problems, solve each one. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible in any screenshot, return 'NO_CODE_FOUND'."
+                {
+                    "type": "text",
+                    "text": f"You are a Python problem-solving assistant. I'm sending you {len(base64_images)} screenshots that may contain related Python problems, code snippets, or test cases. Analyze all screenshots together to understand the complete context. Your task is to: 1) Understand the overall problem across all screenshots, 2) Identify any code patterns, bugs, or failing tests, 3) Provide a comprehensive Python solution that addresses all the issues shown. If the screenshots show a sequence of related problems or iterations, provide the final optimized solution. If they show unrelated problems, solve each one. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible in any screenshot, return 'NO_CODE_FOUND'."
+                }
             ]
             
             # Add all images to the content
@@ -296,7 +299,10 @@ class ScreenshotWatcher:
                         "data": base64_image
                     }
                 })
-                content_parts.append(f"Screenshot {i+1} of {len(base64_images)} ↑")
+                content_parts.append({
+                    "type": "text",
+                    "text": f"Screenshot {i+1} of {len(base64_images)} ↑"
+                })
             
             # Use Claude API
             response = self.claude_client.messages.create(
@@ -332,7 +338,10 @@ class ScreenshotWatcher:
             
             # Prepare content for Claude
             content_parts = [
-                "You are a Python problem-solving assistant. Your task is to analyze screenshots that may contain: A problem statement, Python code, Test cases (sometimes failing). Always produce corrected or new Python code that solves the problem and makes all tests pass. If the screenshot contains only a problem, provide complete Python code that solves it. If it contains failing test cases and code, carefully read them and return a fixed version of the code that passes the tests. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible, return 'NO_CODE_FOUND'.",
+                {
+                    "type": "text",
+                    "text": "You are a Python problem-solving assistant. Your task is to analyze screenshots that may contain: A problem statement, Python code, Test cases (sometimes failing). Always produce corrected or new Python code that solves the problem and makes all tests pass. If the screenshot contains only a problem, provide complete Python code that solves it. If it contains failing test cases and code, carefully read them and return a fixed version of the code that passes the tests. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible, return 'NO_CODE_FOUND'."
+                },
                 {
                     "type": "image",
                     "source": {
