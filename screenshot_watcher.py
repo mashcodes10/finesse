@@ -285,7 +285,7 @@ class ScreenshotWatcher:
             content_parts = [
                 {
                     "type": "text",
-                    "text": f"You are a Python problem-solving assistant. I'm sending you {len(base64_images)} screenshots that may contain related Python problems, code snippets, or test cases. Analyze all screenshots together to understand the complete context. Your task is to: 1) Understand the overall problem across all screenshots, 2) Identify any code patterns, bugs, or failing tests, 3) Provide a comprehensive Python solution that addresses all the issues shown. If the screenshots show a sequence of related problems or iterations, provide the final optimized solution. If they show unrelated problems, solve each one. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible in any screenshot, return 'NO_CODE_FOUND'."
+                    "text": f"You are a Data Structures and Algorithms interview assistant. I'm sending you {len(base64_images)} screenshots that may contain coding problems, algorithm questions, or data structure challenges. Analyze all screenshots together to understand the complete context. Your task is to:\n\n1) **Clarifying Questions**: Start by asking 2-3 clarifying questions about the problem (assumptions, constraints, edge cases)\n2) **Brute Force Solution**: If applicable, provide a brute force approach with time/space complexity\n3) **Optimal Solution**: Provide the most efficient solution with detailed explanation\n4) **Python Code**: Implement the optimal solution in clean, well-commented Python code\n5) **Test Cases**: Include a few test cases to verify the solution\n\nFormat your response as:\n**Clarifying Questions:**\n- Question 1\n- Question 2\n- Question 3\n\n**Brute Force Approach:**\n[Explanation with complexity]\n\n**Optimal Solution:**\n[Detailed explanation with complexity]\n\n**Python Implementation:**\n```python\n[Clean, commented code]\n```\n\n**Test Cases:**\n[Sample inputs and expected outputs]\n\nIf there's no coding problem visible in any screenshot, return 'NO_PROBLEM_FOUND'."
                 }
             ]
             
@@ -320,8 +320,8 @@ class ScreenshotWatcher:
             
             logger.info(f"Claude 4 Sonnet batch processing successful. Tokens: {response.usage.input_tokens + response.usage.output_tokens}")
             
-            if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
-                logger.info("No Python code found in screenshot batch")
+            if extracted_text == 'NO_PROBLEM_FOUND' or not extracted_text:
+                logger.info("No coding problem found in screenshot batch")
                 return None
             
             return extracted_text
@@ -340,7 +340,7 @@ class ScreenshotWatcher:
             content_parts = [
                 {
                     "type": "text",
-                    "text": "You are a Python problem-solving assistant. Your task is to analyze screenshots that may contain: A problem statement, Python code, Test cases (sometimes failing). Always produce corrected or new Python code that solves the problem and makes all tests pass. If the screenshot contains only a problem, provide complete Python code that solves it. If it contains failing test cases and code, carefully read them and return a fixed version of the code that passes the tests. Keep your answer concise: only output the Python code unless brief clarification is necessary. If there's no Python-related content visible, return 'NO_CODE_FOUND'."
+                    "text": "You are a Data Structures and Algorithms interview assistant. Your task is to analyze screenshots that may contain coding problems, algorithm questions, or data structure challenges. Your task is to:\n\n1) **Clarifying Questions**: Start by asking 2-3 clarifying questions about the problem (assumptions, constraints, edge cases)\n2) **Brute Force Solution**: If applicable, provide a brute force approach with time/space complexity\n3) **Optimal Solution**: Provide the most efficient solution with detailed explanation\n4) **Python Code**: Implement the optimal solution in clean, well-commented Python code\n5) **Test Cases**: Include a few test cases to verify the solution\n\nFormat your response as:\n**Clarifying Questions:**\n- Question 1\n- Question 2\n- Question 3\n\n**Brute Force Approach:**\n[Explanation with complexity]\n\n**Optimal Solution:**\n[Detailed explanation with complexity]\n\n**Python Implementation:**\n```python\n[Clean, commented code]\n```\n\n**Test Cases:**\n[Sample inputs and expected outputs]\n\nIf there's no coding problem visible in the screenshot, return 'NO_PROBLEM_FOUND'."
                 },
                 {
                     "type": "image",
@@ -366,8 +366,8 @@ class ScreenshotWatcher:
             
             extracted_text = response.content[0].text.strip()
             
-            if extracted_text == 'NO_CODE_FOUND' or not extracted_text:
-                logger.info("No Python code found in screenshot")
+            if extracted_text == 'NO_PROBLEM_FOUND' or not extracted_text:
+                logger.info("No coding problem found in screenshot")
                 return None
             
             logger.info("Successfully extracted code from screenshot with Claude 4 Sonnet")
@@ -387,7 +387,7 @@ class ScreenshotWatcher:
             py_filepath = self.processed_dir / py_filename
             
             # Add header comment
-            header = f"""# Extracted from screenshot: {original_filename}
+            header = f"""# DSA Interview Analysis from screenshot: {original_filename}
 # Processed at: {datetime.now().isoformat()}
 # Auto-generated by Screenshot Watcher
 
@@ -413,9 +413,9 @@ class ScreenshotWatcher:
             # Header
             print("\n" + border_char * border_length)
             if is_batch:
-                print(f"🚀 CLAUDE 4 SONNET BATCH PROCESSING RESULT ({len(screenshot_names)} screenshots)")
+                print(f"🚀 DSA INTERVIEW ANALYSIS - BATCH PROCESSING ({len(screenshot_names)} screenshots)")
             else:
-                print(f"🐍 PYTHON CODE EXTRACTED")
+                print(f"🎯 DSA INTERVIEW ANALYSIS")
             print(border_char * border_length)
             
             # Screenshot info
@@ -430,7 +430,7 @@ class ScreenshotWatcher:
             print(f"⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Code section
-            print(f"\n{'🐍 EXTRACTED PYTHON CODE:':^{border_length}}")
+            print(f"\n{'🎯 DSA INTERVIEW SOLUTION:':^{border_length}}")
             print(border_char * border_length)
             
             # Display code with line numbers
@@ -441,11 +441,11 @@ class ScreenshotWatcher:
                 print(f"{line_num}{line}")
             
             print(border_char * border_length)
-            print(f"✅ Code processing complete! File saved to: /tmp/processed_screenshots/{filename}")
+            print(f"✅ DSA Interview analysis complete! File saved to: /tmp/processed_screenshots/{filename}")
             print(border_char * border_length + "\n")
             
             # Also log for file logging
-            logger.info("🐍 EXTRACTED PYTHON CODE DISPLAYED IN TERMINAL")
+            logger.info("🎯 DSA INTERVIEW ANALYSIS DISPLAYED IN TERMINAL")
             
         except Exception as e:
             logger.error(f"Error displaying extracted code: {e}")
@@ -489,10 +489,10 @@ class ScreenshotWatcher:
             py_filename = f"batch_{batch_timestamp}_{len(screenshot_names)}screenshots.py"
             py_filepath = self.processed_dir / py_filename
             
-            header = f"""# Extracted from {len(screenshot_names)} screenshots processed together with Claude 4 Sonnet
+            header = f"""# DSA Interview Analysis from {len(screenshot_names)} screenshots processed together with Claude 4 Sonnet
 # Screenshots: {', '.join(screenshot_names)}
 # Processed at: {datetime.now().isoformat()}
-# Batch processing - Claude 4 Sonnet analyzed all screenshots for comprehensive solution
+# Batch processing - Claude 4 Sonnet analyzed all screenshots for comprehensive DSA interview solution
 
 """
             
@@ -506,7 +506,7 @@ class ScreenshotWatcher:
             
             # Send notification
             screenshot_list = '\n'.join([f"   • {name}" for name in screenshot_names])
-            message = f"🚀 **Claude 4 Sonnet Batch Processing Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            message = f"🎯 **DSA Interview Analysis Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
             self.notifier.send_notification(message, py_filename, extracted_code)
             
@@ -550,7 +550,7 @@ class ScreenshotWatcher:
             self._display_extracted_code(extracted_code, [object_name], py_filename, is_batch=False)
             
             # Send notification
-            message = f"🐍 **Python Code Extracted!**\n\n📸 From: `{object_name}`\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            message = f"🎯 **DSA Interview Analysis Complete!**\n\n📸 From: `{object_name}`\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
             self.notifier.send_notification(message, py_filename, extracted_code)
             
