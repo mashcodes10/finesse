@@ -83,7 +83,7 @@ def main():
     if init_success and api_success:
         print("🎉 All tests passed! Question Answer Watcher is ready to use.")
         print("\n📝 Next steps:")
-        print("1. Upload question screenshots to the 'questions/' folder in your Oracle Cloud bucket")
+        print("1. Upload question screenshots to the 'screenshots/' folder in your Oracle Cloud bucket")
         print("2. Run the watcher: python question_answer_watcher.py")
         print("3. The watcher will process 2 screenshots at a time and provide comprehensive answers")
     else:

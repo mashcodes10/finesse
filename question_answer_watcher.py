@@ -225,11 +225,11 @@ class QuestionAnswerWatcher:
     def get_new_screenshots(self) -> List[str]:
         """Get list of new screenshots from Oracle Cloud bucket"""
         try:
-            # List objects in questions/ prefix
+            # List objects in screenshots/ prefix
             list_objects_response = self.object_storage.list_objects(
                 namespace_name=self.namespace,
                 bucket_name=self.bucket_name,
-                prefix="questions/",
+                prefix="screenshots/",
                 fields="name,timeCreated"
             )
             
@@ -248,7 +248,7 @@ class QuestionAnswerWatcher:
                 
                 new_screenshots.append(object_name)
             
-            logger.info(f"Found {len(new_screenshots)} new question screenshots")
+            logger.info(f"Found {len(new_screenshots)} new screenshots for question processing")
             return new_screenshots
             
         except Exception as e:
@@ -475,7 +475,7 @@ class QuestionAnswerWatcher:
             response = self.object_storage.list_objects(
                 namespace_name=self.namespace,
                 bucket_name=self.bucket_name,
-                prefix="questions/",
+                prefix="screenshots/",
                 fields="name"
             )
             
@@ -486,7 +486,7 @@ class QuestionAnswerWatcher:
                     existing_count += 1
             
             self._save_processed_state()
-            logger.info(f"Marked {existing_count} existing question screenshots as processed (will skip them)")
+            logger.info(f"Marked {existing_count} existing screenshots as processed (will skip them)")
             
         except Exception as e:
             logger.error(f"Error marking existing question screenshots: {e}")
@@ -494,11 +494,11 @@ class QuestionAnswerWatcher:
     def run_watcher(self, poll_interval: int = 30, skip_existing: bool = True):
         """Run the main watcher loop"""
         if skip_existing:
-            logger.info("🔄 Marking existing question screenshots as processed (will only process NEW screenshots)")
+            logger.info("🔄 Marking existing screenshots as processed (will only process NEW screenshots)")
             self.mark_existing_as_processed()
         
         logger.info(f"Starting question answer watcher (polling every {poll_interval} seconds)")
-        logger.info("❓ Waiting for NEW question screenshots to be uploaded...")
+        logger.info("❓ Waiting for NEW screenshots to be uploaded for question processing...")
         
         while True:
             try:
@@ -508,7 +508,7 @@ class QuestionAnswerWatcher:
                 if new_screenshots:
                     # Add new screenshots to pending queue
                     self.pending_screenshots.extend(new_screenshots)
-                    logger.info(f"❓ Added {len(new_screenshots)} question screenshots to queue. Total pending: {len(self.pending_screenshots)}")
+                    logger.info(f"❓ Added {len(new_screenshots)} screenshots to queue for question processing. Total pending: {len(self.pending_screenshots)}")
                     
                     # Check if we have enough for batch processing
                     if len(self.pending_screenshots) >= self.batch_size:
@@ -516,16 +516,16 @@ class QuestionAnswerWatcher:
                         batch_to_process = self.pending_screenshots[:self.batch_size]
                         self.pending_screenshots = self.pending_screenshots[self.batch_size:]
                         
-                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} question screenshots with Claude 4 Sonnet")
+                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots for question answering with Claude 4 Sonnet")
                         self.process_question_batch(batch_to_process)
                         
                         # Delay between batches
                         time.sleep(5)
                     else:
-                        logger.info(f"⏳ Waiting for more question screenshots. Need {self.batch_size - len(self.pending_screenshots)} more for batch processing")
+                        logger.info(f"⏳ Waiting for more screenshots. Need {self.batch_size - len(self.pending_screenshots)} more for question processing")
                 
                 if not new_screenshots:
-                    logger.debug("No new question screenshots found")
+                    logger.debug("No new screenshots found for question processing")
                 
                 # Wait for next poll
                 time.sleep(poll_interval)
