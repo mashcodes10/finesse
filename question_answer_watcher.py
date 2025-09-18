@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 import oci
 from oci.auth.signers import InstancePrincipalsSecurityTokenSigner
-import anthropic
+import openai
 
 # Configure logging
 logging.basicConfig(
@@ -185,13 +185,11 @@ class QuestionAnswerWatcher:
         self.state_file = Path("/tmp/processed_questions.json")
         self._load_processed_state()
         
-        # Initialize Claude
-        self.claude_api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not self.claude_api_key:
-            logger.error("ANTHROPIC_API_KEY environment variable not set")
+        # Initialize OpenAI
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        if not openai.api_key:
+            logger.error("OPENAI_API_KEY environment variable not set")
             sys.exit(1)
-        
-        self.claude_client = anthropic.Anthropic(api_key=self.claude_api_key)
         
         # Initialize notification sender
         self.notifier = NotificationSender()
@@ -272,8 +270,8 @@ class QuestionAnswerWatcher:
             logger.error(f"Error downloading {object_name}: {e}")
             return None
     
-    def answer_question_with_claude(self, images_data: List[bytes]) -> Optional[str]:
-        """Answer any type of question using Claude 4 Sonnet Vision API"""
+    def answer_question_with_openai(self, images_data: List[bytes]) -> Optional[str]:
+        """Answer any type of question using OpenAI GPT-5 Thinking API"""
         try:
             # Encode all images to base64
             base64_images = []
@@ -281,8 +279,8 @@ class QuestionAnswerWatcher:
                 base64_image = base64.b64encode(image_data).decode('utf-8')
                 base64_images.append(base64_image)
             
-            # Prepare content for Claude
-            content_parts = [
+            # Prepare content with multiple images for OpenAI
+            content = [
                 {
                     "type": "text",
                     "text": f"You are an expert tutor and problem solver. I'm sending you {len(base64_images)} screenshots that may contain any type of question: Multiple Choice Questions (MCQ), coding problems, math problems, science questions, general knowledge, or any other academic question. Analyze all screenshots together to understand the complete context. Your task is to:\n\n1) **Question Analysis**: Identify what type of question it is and what it's asking for\n2) **Answer Explanation**: Provide a clear, detailed answer with step-by-step explanation\n3) **Additional Context**: If it's an MCQ, explain why other options are wrong. If it's coding, provide the solution with explanation. If it's conceptual, provide comprehensive explanation\n4) **Examples**: Include relevant examples or similar problems if helpful\n5) **Key Takeaways**: Summarize the main concepts or learning points\n\nFormat your response as:\n**Question Type:**\n[Type of question identified]\n\n**Question Analysis:**\n[What the question is asking]\n\n**Answer:**\n[Clear, detailed answer]\n\n**Explanation:**\n[Step-by-step explanation]\n\n**Additional Context:**\n[Why other options are wrong (for MCQ) or additional insights]\n\n**Examples:**\n[Relevant examples if applicable]\n\n**Key Takeaways:**\n[Main concepts and learning points]\n\nIf there's no question visible in any screenshot, return 'NO_QUESTION_FOUND'."
@@ -291,43 +289,54 @@ class QuestionAnswerWatcher:
             
             # Add all images to the content
             for i, base64_image in enumerate(base64_images):
-                content_parts.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": base64_image
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_image}"
                     }
                 })
-                content_parts.append({
+                content.append({
                     "type": "text",
                     "text": f"Question Screenshot {i+1} of {len(base64_images)} ↑"
                 })
             
-            # Use Claude API
-            response = self.claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4000,  # Increased for comprehensive answers
-                messages=[
+            # Prepare the request
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {openai.api_key}"
+            }
+            
+            payload = {
+                "model": "gpt-5",
+                "messages": [
                     {
                         "role": "user",
-                        "content": content_parts
+                        "content": content
                     }
-                ]
-            )
+                ],
+                "max_completion_tokens": 4000  # Increased for comprehensive answers
+            }
             
-            extracted_text = response.content[0].text.strip()
+            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
             
-            logger.info(f"Claude 4 Sonnet question answering successful. Tokens: {response.usage.input_tokens + response.usage.output_tokens}")
-            
-            if extracted_text == 'NO_QUESTION_FOUND' or not extracted_text:
-                logger.info("No question found in screenshot batch")
+            if response.status_code == 200:
+                result = response.json()
+                extracted_text = result['choices'][0]['message']['content'].strip()
+                usage = result.get('usage', {})
+                
+                logger.info(f"GPT-5 Thinking question answering successful. Tokens: {usage.get('total_tokens', 'unknown')}")
+                
+                if extracted_text == 'NO_QUESTION_FOUND' or not extracted_text:
+                    logger.info("No question found in screenshot batch")
+                    return None
+                
+                return extracted_text
+            else:
+                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
                 return None
-            
-            return extracted_text
                 
         except Exception as e:
-            logger.error(f"Error answering question with Claude 4 Sonnet: {e}")
+            logger.error(f"Error answering question with OpenAI: {e}")
             return None
     
     def save_answer(self, answer: str, original_filename: str) -> str:
@@ -402,8 +411,8 @@ class QuestionAnswerWatcher:
                 logger.info(line)
     
     def process_question_batch(self, screenshot_names: List[str]):
-        """Process a batch of 2 question screenshots together with Claude 4 Sonnet"""
-        logger.info(f"🔄 Processing batch of {len(screenshot_names)} question screenshots with Claude 4 Sonnet")
+        """Process a batch of 2 question screenshots together with OpenAI GPT-5 Thinking"""
+        logger.info(f"🔄 Processing batch of {len(screenshot_names)} question screenshots with OpenAI GPT-5 Thinking")
         
         try:
             # Download all screenshots
@@ -421,8 +430,8 @@ class QuestionAnswerWatcher:
             
             logger.info(f"📥 Downloaded {len(images_data)} screenshots for batch processing")
             
-            # Answer question using Claude 4 Sonnet
-            answer = self.answer_question_with_claude(images_data)
+            # Answer question using OpenAI GPT-5 Thinking
+            answer = self.answer_question_with_openai(images_data)
             if not answer:
                 logger.info("No question found in screenshot batch")
                 # Mark all as processed
@@ -436,10 +445,10 @@ class QuestionAnswerWatcher:
             txt_filename = f"question_batch_{batch_timestamp}_{len(screenshot_names)}screenshots.txt"
             txt_filepath = self.processed_dir / txt_filename
             
-            header = f"""# Question Answer from {len(screenshot_names)} screenshots processed together with Claude 4 Sonnet
+            header = f"""# Question Answer from {len(screenshot_names)} screenshots processed together with OpenAI GPT-5 Thinking
 # Screenshots: {', '.join(screenshot_names)}
 # Processed at: {datetime.now().isoformat()}
-# Batch processing - Claude 4 Sonnet analyzed all screenshots for comprehensive answer
+# Batch processing - OpenAI GPT-5 Thinking analyzed all screenshots for comprehensive answer
 
 """
             
@@ -516,7 +525,7 @@ class QuestionAnswerWatcher:
                         batch_to_process = self.pending_screenshots[:self.batch_size]
                         self.pending_screenshots = self.pending_screenshots[self.batch_size:]
                         
-                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots for question answering with Claude 4 Sonnet")
+                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots for question answering with OpenAI GPT-5 Thinking")
                         self.process_question_batch(batch_to_process)
                         
                         # Delay between batches

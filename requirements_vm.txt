@@ -1,6 +1,6 @@
 # Requirements for Oracle VM Screenshot Watcher
 oci==2.112.1
-anthropic>=0.40.0
+openai==1.3.8
 requests==2.31.0
 Pillow>=10.4.0
 python-telegram-bot==20.7
