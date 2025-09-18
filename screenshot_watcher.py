@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Screenshot Watcher for Oracle Cloud VM
-Polls Oracle Cloud Object Storage for new screenshots, processes them with Claude 4 Sonnet Vision API,
+Polls Oracle Cloud Object Storage for new screenshots, processes them with OpenAI GPT-5 Thinking API,
 and sends results to phone via ntfy or Telegram
 """
 
@@ -177,7 +177,7 @@ class ScreenshotWatcher:
         self.processed_dir.mkdir(exist_ok=True)
         
         # Batch processing configuration
-        self.batch_size = 4  # Wait for 4 screenshots before processing
+        self.batch_size = 2  # Wait for 2 screenshots before processing
         self.pending_screenshots = []  # Queue of screenshots waiting to be processed
         
         # Keep track of processed files
@@ -474,7 +474,7 @@ class ScreenshotWatcher:
                 logger.info(line)
     
     def process_screenshot_batch(self, screenshot_names: List[str]):
-        """Process a batch of 4 screenshots together with OpenAI GPT-5 Thinking"""
+        """Process a batch of 2 screenshots together with OpenAI GPT-5 Thinking"""
         logger.info(f"🔄 Processing batch of {len(screenshot_names)} screenshots with OpenAI GPT-5 Thinking")
         
         try:
@@ -627,7 +627,7 @@ class ScreenshotWatcher:
                     
                     # Check if we have enough for batch processing
                     if len(self.pending_screenshots) >= self.batch_size:
-                        # Process a batch of 4 screenshots
+                        # Process a batch of 2 screenshots
                         batch_to_process = self.pending_screenshots[:self.batch_size]
                         self.pending_screenshots = self.pending_screenshots[self.batch_size:]
                         
