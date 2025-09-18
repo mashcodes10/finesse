@@ -18,55 +18,67 @@ except ImportError as e:
     print(f"❌ Failed to import ScreenshotWatcher: {e}")
     sys.exit(1)
 
-def test_claude_initialization():
-    """Test if Claude client initializes properly"""
-    print("\n🧪 Testing Claude initialization...")
+def test_openai_initialization():
+    """Test if OpenAI client initializes properly"""
+    print("\n🧪 Testing OpenAI initialization...")
     
     # Check if API key is set
-    api_key = os.getenv('ANTHROPIC_API_KEY')
+    api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
-        print("❌ ANTHROPIC_API_KEY environment variable not set")
-        print("Please set your Anthropic API key: export ANTHROPIC_API_KEY='your-key-here'")
+        print("❌ OPENAI_API_KEY environment variable not set")
+        print("Please set your OpenAI API key: export OPENAI_API_KEY='your-key-here'")
         return False
     
-    print("✅ ANTHROPIC_API_KEY is set")
+    print("✅ OPENAI_API_KEY is set")
     
     try:
-        # Try to create a watcher instance (this will test Claude initialization)
+        # Try to create a watcher instance (this will test OpenAI initialization)
         watcher = ScreenshotWatcher()
-        print("✅ Claude client initialized successfully")
+        print("✅ OpenAI client initialized successfully")
         return True
     except Exception as e:
-        print(f"❌ Failed to initialize Claude client: {e}")
+        print(f"❌ Failed to initialize OpenAI client: {e}")
         return False
 
-def test_claude_api_connection():
-    """Test if we can make a simple API call to Claude"""
-    print("\n🧪 Testing Claude API connection...")
+def test_openai_api_connection():
+    """Test if we can make a simple API call to OpenAI"""
+    print("\n🧪 Testing OpenAI API connection...")
     
     try:
-        import anthropic
-        
-        client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        import openai
+        import requests
         
         # Make a simple test call
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=100,
-            messages=[
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
+        }
+        
+        payload = {
+            "model": "gpt-5",
+            "messages": [
                 {
                     "role": "user",
-                    "content": "Hello! Please respond with 'Claude is working!' if you can see this message."
+                    "content": "Hello! Please respond with 'GPT-5 is working!' if you can see this message."
                 }
-            ]
-        )
+            ],
+            "max_completion_tokens": 100
+        }
         
-        print(f"✅ Claude API connection successful")
-        print(f"Response: {response.content[0].text}")
-        return True
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            answer = result['choices'][0]['message']['content'].strip()
+            print(f"✅ OpenAI API connection successful")
+            print(f"Response: {answer}")
+            return True
+        else:
+            print(f"❌ OpenAI API error: {response.status_code} - {response.text}")
+            return False
         
     except Exception as e:
-        print(f"❌ Claude API connection failed: {e}")
+        print(f"❌ OpenAI API connection failed: {e}")
         return False
 
 def test_claude_batch_api():
@@ -131,14 +143,14 @@ def test_claude_batch_api():
 
 def main():
     """Run all tests"""
-    print("🚀 Testing Claude 4 Sonnet Integration")
+    print("🚀 Testing GPT-5 Thinking Integration")
     print("=" * 50)
     
     # Test 1: Import and initialization
-    init_success = test_claude_initialization()
+    init_success = test_openai_initialization()
     
     # Test 2: API connection
-    api_success = test_claude_api_connection()
+    api_success = test_openai_api_connection()
     
     # Test 3: Batch API connection
     batch_success = test_claude_batch_api()
