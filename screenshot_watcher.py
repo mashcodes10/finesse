@@ -326,8 +326,18 @@ class ScreenshotWatcher:
                 
                 logger.info(f"GPT-5 Thinking batch processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
                 
-                if extracted_text == 'NO_PROBLEM_FOUND' or not extracted_text:
+                # Log the actual response for debugging
+                logger.info(f"OpenAI response length: {len(extracted_text)} characters")
+                logger.debug(f"OpenAI response preview: {extracted_text[:200]}...")
+                
+                # Check if the response indicates no problem was found
+                if not extracted_text or 'NO_PROBLEM_FOUND' in extracted_text:
                     logger.info("No coding problem found in screenshot batch")
+                    return None
+                
+                # Additional check: if response is very short and doesn't contain typical problem-solving content
+                if len(extracted_text) < 50 and 'problem' not in extracted_text.lower():
+                    logger.info("Response too short, likely no valid problem found")
                     return None
                 
                 return extracted_text
@@ -381,9 +391,21 @@ class ScreenshotWatcher:
             if response.status_code == 200:
                 result = response.json()
                 extracted_text = result['choices'][0]['message']['content'].strip()
+                usage = result.get('usage', {})
                 
-                if extracted_text == 'NO_PROBLEM_FOUND' or not extracted_text:
+                # Log the actual response for debugging
+                logger.info(f"OpenAI single screenshot processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
+                logger.info(f"OpenAI response length: {len(extracted_text)} characters")
+                logger.debug(f"OpenAI response preview: {extracted_text[:200]}...")
+                
+                # Check if the response indicates no problem was found
+                if not extracted_text or 'NO_PROBLEM_FOUND' in extracted_text:
                     logger.info("No coding problem found in screenshot")
+                    return None
+                
+                # Additional check: if response is very short and doesn't contain typical problem-solving content
+                if len(extracted_text) < 50 and 'problem' not in extracted_text.lower():
+                    logger.info("Response too short, likely no valid problem found")
                     return None
                 
                 logger.info("Successfully extracted code from screenshot with GPT-5 Thinking")
