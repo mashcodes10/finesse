@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Screenshot Watcher for Oracle Cloud VM
-Polls Oracle Cloud Object Storage for new screenshots, processes them with OpenAI GPT-5 Thinking API,
+Polls Oracle Cloud Object Storage for new screenshots, processes them with OpenAI GPT-4o API,
 and sends results to phone via ntfy or Telegram
 """
 
@@ -271,7 +271,7 @@ class ScreenshotWatcher:
             return None
     
     def extract_code_with_openai_batch(self, images_data: List[bytes]) -> Optional[str]:
-        """Extract Python code from multiple screenshots using OpenAI GPT-5 Thinking API"""
+        """Extract Python code from multiple screenshots using OpenAI GPT-4o API"""
         try:
             # Encode all images to base64
             base64_images = []
@@ -307,7 +307,7 @@ class ScreenshotWatcher:
             }
             
             payload = {
-                "model": "gpt-5",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
@@ -317,36 +317,67 @@ class ScreenshotWatcher:
                 "max_completion_tokens": 3000
             }
             
+            # Log the request details for debugging
+            logger.info(f"Sending request to OpenAI with {len(base64_images)} images")
+            logger.info(f"Payload model: {payload['model']}")
+            logger.info(f"Payload max_completion_tokens: {payload['max_completion_tokens']}")
+            
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            
+            # Log the full response for debugging
+            logger.info(f"OpenAI API response status: {response.status_code}")
+            logger.info(f"OpenAI API response headers: {dict(response.headers)}")
             
             if response.status_code == 200:
                 result = response.json()
-                extracted_text = result['choices'][0]['message']['content'].strip()
+                logger.info(f"Full OpenAI response structure: {json.dumps(result, indent=2)}")
+                
+                # Check if choices exist and have content
+                if 'choices' not in result or len(result['choices']) == 0:
+                    logger.error("No choices in OpenAI response")
+                    return None
+                
+                if 'message' not in result['choices'][0] or 'content' not in result['choices'][0]['message']:
+                    logger.error("No message content in OpenAI response")
+                    return None
+                
+                extracted_text = result['choices'][0]['message']['content']
+                if extracted_text is None:
+                    extracted_text = ""
+                else:
+                    extracted_text = extracted_text.strip()
+                
                 usage = result.get('usage', {})
                 
-                logger.info(f"GPT-5 Thinking batch processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
+                logger.info(f"GPT-4o batch processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
                 
                 # Log the actual response for debugging
                 logger.info(f"OpenAI response length: {len(extracted_text)} characters")
-                logger.info(f"OpenAI response preview: {extracted_text[:500]}...")
+                if extracted_text:
+                    logger.info(f"OpenAI response preview: {extracted_text[:500]}...")
+                else:
+                    logger.error("OpenAI returned empty content despite successful API call")
                 
                 # Since there's always a coding problem in screenshots, process all non-empty responses
                 if not extracted_text:
-                    logger.error("Empty response from OpenAI - this shouldn't happen")
+                    logger.error("Empty response from OpenAI - investigating...")
+                    logger.error(f"Full response for debugging: {json.dumps(result, indent=2)}")
                     return None
                 
                 logger.info("Processing DSA problem from screenshot batch")
                 return extracted_text
             else:
-                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+                logger.error(f"OpenAI API error: {response.status_code}")
+                logger.error(f"Response headers: {dict(response.headers)}")
+                logger.error(f"Response text: {response.text}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error extracting code with GPT-5 Thinking batch: {e}")
+            logger.error(f"Error extracting code with GPT-4o batch: {e}")
             return None
 
     def extract_code_with_openai(self, image_data: bytes) -> Optional[str]:
-        """Extract Python code from screenshot using OpenAI GPT-5 Thinking API"""
+        """Extract Python code from screenshot using OpenAI GPT-4o API"""
         try:
             # Encode image to base64
             base64_image = base64.b64encode(image_data).decode('utf-8')
@@ -372,7 +403,7 @@ class ScreenshotWatcher:
             }
             
             payload = {
-                "model": "gpt-5",
+                "model": "gpt-4o",
                 "messages": [
                     {
                         "role": "user",
@@ -382,31 +413,62 @@ class ScreenshotWatcher:
                 "max_completion_tokens": 2000
             }
             
+            # Log the request details for debugging
+            logger.info(f"Sending single screenshot request to OpenAI")
+            logger.info(f"Payload model: {payload['model']}")
+            logger.info(f"Payload max_completion_tokens: {payload['max_completion_tokens']}")
+            
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            
+            # Log the full response for debugging
+            logger.info(f"OpenAI API response status: {response.status_code}")
+            logger.info(f"OpenAI API response headers: {dict(response.headers)}")
             
             if response.status_code == 200:
                 result = response.json()
-                extracted_text = result['choices'][0]['message']['content'].strip()
+                logger.info(f"Full OpenAI response structure: {json.dumps(result, indent=2)}")
+                
+                # Check if choices exist and have content
+                if 'choices' not in result or len(result['choices']) == 0:
+                    logger.error("No choices in OpenAI response")
+                    return None
+                
+                if 'message' not in result['choices'][0] or 'content' not in result['choices'][0]['message']:
+                    logger.error("No message content in OpenAI response")
+                    return None
+                
+                extracted_text = result['choices'][0]['message']['content']
+                if extracted_text is None:
+                    extracted_text = ""
+                else:
+                    extracted_text = extracted_text.strip()
+                
                 usage = result.get('usage', {})
                 
                 # Log the actual response for debugging
                 logger.info(f"OpenAI single screenshot processing successful. Tokens: {usage.get('total_tokens', 'unknown')}")
                 logger.info(f"OpenAI response length: {len(extracted_text)} characters")
-                logger.info(f"OpenAI response preview: {extracted_text[:500]}...")
+                if extracted_text:
+                    logger.info(f"OpenAI response preview: {extracted_text[:500]}...")
+                else:
+                    logger.error("OpenAI returned empty content despite successful API call")
                 
                 # Since there's always a coding problem in screenshots, process all non-empty responses
                 if not extracted_text:
-                    logger.error("Empty response from OpenAI - this shouldn't happen")
+                    logger.error("Empty response from OpenAI - investigating...")
+                    logger.error(f"Full response for debugging: {json.dumps(result, indent=2)}")
                     return None
                 
-                logger.info("Successfully extracted DSA problem analysis from screenshot with GPT-5 Thinking")
+                logger.info("Successfully extracted DSA problem analysis from screenshot with GPT-4o")
                 return extracted_text
             else:
-                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+                logger.error(f"OpenAI API error: {response.status_code}")
+                logger.error(f"Response headers: {dict(response.headers)}")
+                logger.error(f"Response text: {response.text}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error extracting code with GPT-5 Thinking: {e}")
+            logger.error(f"Error extracting code with GPT-4o: {e}")
             return None
     
     def save_extracted_code(self, code: str, original_filename: str) -> str:
@@ -487,8 +549,8 @@ class ScreenshotWatcher:
                 logger.info(line)
     
     def process_screenshot_batch(self, screenshot_names: List[str]):
-        """Process a batch of 2 screenshots together with OpenAI GPT-5 Thinking"""
-        logger.info(f"🔄 Processing batch of {len(screenshot_names)} screenshots with OpenAI GPT-5 Thinking")
+        """Process a batch of 2 screenshots together with OpenAI GPT-4o"""
+        logger.info(f"🔄 Processing batch of {len(screenshot_names)} screenshots with OpenAI GPT-4o")
         
         try:
             # Download all screenshots
@@ -506,7 +568,7 @@ class ScreenshotWatcher:
             
             logger.info(f"📥 Downloaded {len(images_data)} screenshots for batch processing")
             
-            # Extract code using GPT-5 Thinking batch processing
+            # Extract code using GPT-4o batch processing
             extracted_code = self.extract_code_with_openai_batch(images_data)
             if not extracted_code:
                 logger.info("No code found in screenshot batch")
@@ -521,10 +583,10 @@ class ScreenshotWatcher:
             py_filename = f"batch_{batch_timestamp}_{len(screenshot_names)}screenshots.py"
             py_filepath = self.processed_dir / py_filename
             
-            header = f"""# DSA Interview Analysis from {len(screenshot_names)} screenshots processed together with OpenAI GPT-5 Thinking
+            header = f"""# DSA Interview Analysis from {len(screenshot_names)} screenshots processed together with OpenAI GPT-4o
 # Screenshots: {', '.join(screenshot_names)}
 # Processed at: {datetime.now().isoformat()}
-# Batch processing - OpenAI GPT-5 Thinking analyzed all screenshots for comprehensive DSA interview solution
+# Batch processing - OpenAI GPT-4o analyzed all screenshots for comprehensive DSA interview solution
 
 """
             
@@ -538,7 +600,7 @@ class ScreenshotWatcher:
             
             # Send notification
             screenshot_list = '\n'.join([f"   • {name}" for name in screenshot_names])
-            message = f"🎯 **GPT-5 Thinking DSA Analysis Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            message = f"🎯 **GPT-4o DSA Analysis Complete!**\n\n📸 Processed {len(screenshot_names)} screenshots:\n{screenshot_list}\n\n📝 Saved as: `{py_filename}`\n⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
             self.notifier.send_notification(message, py_filename, extracted_code)
             
@@ -564,7 +626,7 @@ class ScreenshotWatcher:
             if not image_data:
                 return False
             
-            # Extract code using GPT-5 Thinking
+            # Extract code using GPT-4o
             extracted_code = self.extract_code_with_openai(image_data)
             if not extracted_code:
                 logger.info(f"No code found in {object_name}")
@@ -644,7 +706,7 @@ class ScreenshotWatcher:
                         batch_to_process = self.pending_screenshots[:self.batch_size]
                         self.pending_screenshots = self.pending_screenshots[self.batch_size:]
                         
-                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots with GPT-5 Thinking")
+                        logger.info(f"🚀 Processing batch of {len(batch_to_process)} screenshots with GPT-4o")
                         self.process_screenshot_batch(batch_to_process)
                         
                         # Delay between batches
