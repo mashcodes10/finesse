@@ -477,7 +477,7 @@ The solution includes multiple approaches and comprehensive test cases.
             return None
 
     def _display_dsa_solution(self, solution: str, screenshot_names: List[str], filename: str):
-        """Display DSA solution in terminal with enhanced formatting"""
+        """Display complete DSA solution in terminal with enhanced formatting"""
         try:
             # Create a nice terminal display
             border_char = "="
@@ -497,20 +497,16 @@ The solution includes multiple approaches and comprehensive test cases.
             print(f"⏰ Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Solution section
-            print(f"\n{'🚀 DSA SOLUTION PREVIEW:':^{border_length}}")
+            print(f"\n{'🚀 COMPLETE DSA SOLUTION:':^{border_length}}")
             print(border_char * border_length)
             
-            # Display solution with line numbers (first 50 lines for preview)
+            # Display FULL solution with line numbers
             solution_lines = solution.split('\n')
-            preview_lines = solution_lines[:50]  # Show first 50 lines
             
-            for i, line in enumerate(preview_lines, 1):
+            for i, line in enumerate(solution_lines, 1):
                 # Add line numbers for better readability
                 line_num = f"{i:3d}| "
                 print(f"{line_num}{line}")
-            
-            if len(solution_lines) > 50:
-                print(f"{'... [' + str(len(solution_lines) - 50) + ' more lines in full file] ...':^{border_length}}")
             
             print(border_char * border_length)
             print(f"✅ DSA Solution complete! Full file saved to: /tmp/dsa_solutions/{filename}")
@@ -518,7 +514,7 @@ The solution includes multiple approaches and comprehensive test cases.
             print(border_char * border_length + "\n")
             
             # Also log for file logging
-            logger.info("🔥 DSA SOLUTION DISPLAYED IN TERMINAL")
+            logger.info("🔥 COMPLETE DSA SOLUTION DISPLAYED IN TERMINAL")
             
         except Exception as e:
             logger.error(f"Error displaying DSA solution: {e}")
