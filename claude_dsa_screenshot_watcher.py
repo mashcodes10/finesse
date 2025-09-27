@@ -275,11 +275,13 @@ class ClaudeDSAScreenshotWatcher:
             logger.error(f"Error downloading {object_name}: {e}")
             return None
     
-    def compress_image_if_needed(self, image_data: bytes, max_size_mb: float = 3.7) -> bytes:
+    def compress_image_if_needed(self, image_data: bytes, max_size_mb: float = 3.7) -> tuple[bytes, str]:
         """Compress image if it exceeds the size limit while maintaining readability
         
         Note: max_size_mb should account for base64 encoding overhead (~33% increase)
         Claude's limit is 5MB for base64, so we target 3.7MB for raw image data
+        
+        Returns: (image_bytes, media_type)
         """
         try:
             # Check current size
@@ -287,7 +289,7 @@ class ClaudeDSAScreenshotWatcher:
             
             if current_size_mb <= max_size_mb:
                 logger.info(f"Image size {current_size_mb:.2f}MB is within limit")
-                return image_data
+                return image_data, "image/png"
             
             logger.info(f"Image size {current_size_mb:.2f}MB exceeds limit, compressing...")
             
@@ -327,7 +329,7 @@ class ClaudeDSAScreenshotWatcher:
                 
                 if compressed_size_mb <= max_size_mb:
                     logger.info(f"Successfully compressed from {current_size_mb:.2f}MB to {compressed_size_mb:.2f}MB")
-                    return compressed_data
+                    return compressed_data, "image/jpeg"
             
             # If still too large, try resizing
             logger.warning("Compression alone not sufficient, trying resize...")
@@ -351,7 +353,7 @@ class ClaudeDSAScreenshotWatcher:
                 
                 if compressed_size_mb <= max_size_mb:
                     logger.info(f"Successfully resized and compressed from {current_size_mb:.2f}MB to {compressed_size_mb:.2f}MB")
-                    return compressed_data
+                    return compressed_data, "image/jpeg"
                 
                 scale_factor -= 0.1
             
@@ -360,28 +362,30 @@ class ClaudeDSAScreenshotWatcher:
             final_img = img.resize((int(original_width * 0.5), int(original_height * 0.5)), Image.Resampling.LANCZOS)
             output_buffer = io.BytesIO()
             final_img.save(output_buffer, format='JPEG', quality=30, optimize=True)
-            return output_buffer.getvalue()
+            return output_buffer.getvalue(), "image/jpeg"
             
         except Exception as e:
             logger.error(f"Error compressing image: {e}")
             # Return original if compression fails
-            return image_data
+            return image_data, "image/png"
 
     def solve_dsa_problem_batch(self, images_data: List[bytes]) -> Optional[str]:
         """Solve DSA problems from 3 screenshots using Claude 4 Sonnet API with enhanced prompting"""
         try:
             # Compress and encode all images to base64
             base64_images = []
+            image_info = []
             for i, image_data in enumerate(images_data):
                 # Compress image if needed (Claude has 5MB limit, base64 adds ~33% overhead)
-                compressed_image_data = self.compress_image_if_needed(image_data, max_size_mb=3.7)
+                compressed_image_data, media_type = self.compress_image_if_needed(image_data, max_size_mb=3.7)
                 base64_image = base64.b64encode(compressed_image_data).decode('utf-8')
                 base64_images.append(base64_image)
+                image_info.append(media_type)
                 
                 # Log the final sizes (both original and base64)
                 final_size_mb = len(compressed_image_data) / (1024 * 1024)
                 base64_size_mb = len(base64_image.encode('utf-8')) / (1024 * 1024)
-                logger.info(f"Image {i+1} compressed size: {final_size_mb:.2f}MB, base64 size: {base64_size_mb:.2f}MB")
+                logger.info(f"Image {i+1} compressed size: {final_size_mb:.2f}MB, base64 size: {base64_size_mb:.2f}MB, format: {media_type}")
             
             # Enhanced prompt for DSA problem solving with test case fixing
             prompt_text = f"""You are an expert DSA (Data Structures & Algorithms) problem solver and coding interview specialist. I'm providing you with {len(base64_images)} screenshots that contain coding problems, algorithmic challenges, or failed test cases that need solutions.
@@ -461,7 +465,7 @@ CRITICAL NOTES:
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/png",
+                        "media_type": image_info[i],
                         "data": base64_image
                     }
                 })
