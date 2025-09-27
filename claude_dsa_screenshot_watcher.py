@@ -20,6 +20,8 @@ from typing import Optional, List, Dict
 import oci
 from oci.auth.signers import InstancePrincipalsSecurityTokenSigner
 import anthropic
+from PIL import Image
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -273,14 +275,108 @@ class ClaudeDSAScreenshotWatcher:
             logger.error(f"Error downloading {object_name}: {e}")
             return None
     
+    def compress_image_if_needed(self, image_data: bytes, max_size_mb: float = 4.5) -> bytes:
+        """Compress image if it exceeds the size limit while maintaining readability"""
+        try:
+            # Check current size
+            current_size_mb = len(image_data) / (1024 * 1024)
+            
+            if current_size_mb <= max_size_mb:
+                logger.info(f"Image size {current_size_mb:.2f}MB is within limit")
+                return image_data
+            
+            logger.info(f"Image size {current_size_mb:.2f}MB exceeds limit, compressing...")
+            
+            # Open image with PIL
+            img = Image.open(io.BytesIO(image_data))
+            
+            # Convert to RGB if necessary (for JPEG compression)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGB')
+            
+            # Calculate compression ratio needed
+            target_size_bytes = int(max_size_mb * 1024 * 1024)
+            compression_ratio = target_size_bytes / len(image_data)
+            
+            # Start with quality based on compression ratio needed
+            if compression_ratio > 0.7:
+                quality = 85
+            elif compression_ratio > 0.5:
+                quality = 75
+            elif compression_ratio > 0.3:
+                quality = 65
+            else:
+                quality = 55
+            
+            # Try different compression levels
+            for attempt_quality in [quality, quality-10, quality-20, 50, 40, 30]:
+                if attempt_quality < 20:
+                    attempt_quality = 20
+                
+                # Compress image
+                output_buffer = io.BytesIO()
+                img.save(output_buffer, format='JPEG', quality=attempt_quality, optimize=True)
+                compressed_data = output_buffer.getvalue()
+                compressed_size_mb = len(compressed_data) / (1024 * 1024)
+                
+                logger.info(f"Compression attempt: quality={attempt_quality}, size={compressed_size_mb:.2f}MB")
+                
+                if compressed_size_mb <= max_size_mb:
+                    logger.info(f"Successfully compressed from {current_size_mb:.2f}MB to {compressed_size_mb:.2f}MB")
+                    return compressed_data
+            
+            # If still too large, try resizing
+            logger.warning("Compression alone not sufficient, trying resize...")
+            
+            # Reduce image dimensions while maintaining aspect ratio
+            original_width, original_height = img.size
+            scale_factor = 0.8  # Start with 80% scale
+            
+            while scale_factor > 0.3:  # Don't go below 30% to maintain readability
+                new_width = int(original_width * scale_factor)
+                new_height = int(original_height * scale_factor)
+                
+                resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                
+                output_buffer = io.BytesIO()
+                resized_img.save(output_buffer, format='JPEG', quality=75, optimize=True)
+                compressed_data = output_buffer.getvalue()
+                compressed_size_mb = len(compressed_data) / (1024 * 1024)
+                
+                logger.info(f"Resize attempt: scale={scale_factor:.1f}, size={compressed_size_mb:.2f}MB")
+                
+                if compressed_size_mb <= max_size_mb:
+                    logger.info(f"Successfully resized and compressed from {current_size_mb:.2f}MB to {compressed_size_mb:.2f}MB")
+                    return compressed_data
+                
+                scale_factor -= 0.1
+            
+            # Final fallback - return heavily compressed version
+            logger.warning("Using heavily compressed fallback")
+            final_img = img.resize((int(original_width * 0.5), int(original_height * 0.5)), Image.Resampling.LANCZOS)
+            output_buffer = io.BytesIO()
+            final_img.save(output_buffer, format='JPEG', quality=30, optimize=True)
+            return output_buffer.getvalue()
+            
+        except Exception as e:
+            logger.error(f"Error compressing image: {e}")
+            # Return original if compression fails
+            return image_data
+
     def solve_dsa_problem_batch(self, images_data: List[bytes]) -> Optional[str]:
         """Solve DSA problems from 3 screenshots using Claude 4 Sonnet API with enhanced prompting"""
         try:
-            # Encode all images to base64
+            # Compress and encode all images to base64
             base64_images = []
-            for image_data in images_data:
-                base64_image = base64.b64encode(image_data).decode('utf-8')
+            for i, image_data in enumerate(images_data):
+                # Compress image if needed (Claude has 5MB limit)
+                compressed_image_data = self.compress_image_if_needed(image_data, max_size_mb=4.5)
+                base64_image = base64.b64encode(compressed_image_data).decode('utf-8')
                 base64_images.append(base64_image)
+                
+                # Log the final size
+                final_size_mb = len(compressed_image_data) / (1024 * 1024)
+                logger.info(f"Image {i+1} final size: {final_size_mb:.2f}MB")
             
             # Enhanced prompt for DSA problem solving with test case fixing
             prompt_text = f"""You are an expert DSA (Data Structures & Algorithms) problem solver and coding interview specialist. I'm providing you with {len(base64_images)} screenshots that contain coding problems, algorithmic challenges, or failed test cases that need solutions.
