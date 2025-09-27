@@ -275,8 +275,12 @@ class ClaudeDSAScreenshotWatcher:
             logger.error(f"Error downloading {object_name}: {e}")
             return None
     
-    def compress_image_if_needed(self, image_data: bytes, max_size_mb: float = 4.5) -> bytes:
-        """Compress image if it exceeds the size limit while maintaining readability"""
+    def compress_image_if_needed(self, image_data: bytes, max_size_mb: float = 3.7) -> bytes:
+        """Compress image if it exceeds the size limit while maintaining readability
+        
+        Note: max_size_mb should account for base64 encoding overhead (~33% increase)
+        Claude's limit is 5MB for base64, so we target 3.7MB for raw image data
+        """
         try:
             # Check current size
             current_size_mb = len(image_data) / (1024 * 1024)
@@ -369,14 +373,15 @@ class ClaudeDSAScreenshotWatcher:
             # Compress and encode all images to base64
             base64_images = []
             for i, image_data in enumerate(images_data):
-                # Compress image if needed (Claude has 5MB limit)
-                compressed_image_data = self.compress_image_if_needed(image_data, max_size_mb=4.5)
+                # Compress image if needed (Claude has 5MB limit, base64 adds ~33% overhead)
+                compressed_image_data = self.compress_image_if_needed(image_data, max_size_mb=3.7)
                 base64_image = base64.b64encode(compressed_image_data).decode('utf-8')
                 base64_images.append(base64_image)
                 
-                # Log the final size
+                # Log the final sizes (both original and base64)
                 final_size_mb = len(compressed_image_data) / (1024 * 1024)
-                logger.info(f"Image {i+1} final size: {final_size_mb:.2f}MB")
+                base64_size_mb = len(base64_image.encode('utf-8')) / (1024 * 1024)
+                logger.info(f"Image {i+1} compressed size: {final_size_mb:.2f}MB, base64 size: {base64_size_mb:.2f}MB")
             
             # Enhanced prompt for DSA problem solving with test case fixing
             prompt_text = f"""You are an expert DSA (Data Structures & Algorithms) problem solver and coding interview specialist. I'm providing you with {len(base64_images)} screenshots that contain coding problems, algorithmic challenges, or failed test cases that need solutions.
