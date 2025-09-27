@@ -370,7 +370,7 @@ CRITICAL NOTES:
             
             # Make the API call to Claude
             message = self.claude_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-5-sonnet-20250514",
                 max_tokens=4000,
                 messages=[
                     {
