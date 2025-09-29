@@ -42,6 +42,7 @@ class ScreenshotUploader:
         
         # Configuration - Update these values
         self.bucket_name = "screenshot-bucket"
+        self.upload_folder = "claude-screenshots/"  # New folder for Claude processing
         self.screenshot_dir = Path.home() / "Screenshots" / "auto_screenshots"
         
         # Create screenshot directory if it doesn't exist
@@ -55,6 +56,7 @@ class ScreenshotUploader:
         self.cursor_enter_time = None
         
         logger.info(f"Initialized ScreenshotUploader with bucket: {self.bucket_name}")
+        logger.info(f"Upload folder: {self.upload_folder}")
         logger.info(f"Screenshot directory: {self.screenshot_dir}")
         logger.info(f"Trigger zones configured: {len(self.trigger_zones)} zones")
 
@@ -187,7 +189,7 @@ class ScreenshotUploader:
     def upload_to_oracle_cloud(self, filepath):
         """Upload screenshot to Oracle Cloud Object Storage"""
         try:
-            object_name = f"screenshots/{filepath.name}"
+            object_name = f"{self.upload_folder}{filepath.name}"
             
             with open(filepath, 'rb') as file_data:
                 self.object_storage.put_object(
@@ -198,7 +200,7 @@ class ScreenshotUploader:
                     content_type='image/png'
                 )
             
-            logger.info(f"Uploaded {filepath.name} to Oracle Cloud Storage")
+            logger.info(f"Uploaded {filepath.name} to Oracle Cloud Storage in folder: {self.upload_folder}")
             
             # Optional: Remove local file after successful upload
             filepath.unlink()

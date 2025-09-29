@@ -37,6 +37,7 @@ class SilentScreenshotDaemon:
         
         # Configuration
         self.bucket_name = "screenshot-bucket"
+        self.upload_folder = "claude-screenshots/"  # New folder for Claude processing
         self.screenshot_dir = Path.home() / "Screenshots" / "auto_screenshots"
         
         # Create screenshot directory if it doesn't exist
@@ -58,6 +59,7 @@ class SilentScreenshotDaemon:
         
         logger.info(f"Silent screenshot daemon initialized")
         logger.info(f"Bucket: {self.bucket_name}")
+        logger.info(f"Upload folder: {self.upload_folder}")
         logger.info(f"Trigger zones: {self.trigger_zones}")
 
     def get_cursor_position(self):
@@ -166,7 +168,7 @@ class SilentScreenshotDaemon:
     def upload_to_oracle_cloud(self, filepath):
         """Upload screenshot to Oracle Cloud"""
         try:
-            object_name = f"screenshots/{filepath.name}"
+            object_name = f"{self.upload_folder}{filepath.name}"
             
             with open(filepath, 'rb') as file_data:
                 self.object_storage.put_object(
@@ -177,7 +179,7 @@ class SilentScreenshotDaemon:
                     content_type='image/png'
                 )
             
-            logger.info(f"Uploaded {filepath.name} to Oracle Cloud")
+            logger.info(f"Uploaded {filepath.name} to Oracle Cloud in folder: {self.upload_folder}")
             
             # Remove local file
             filepath.unlink()

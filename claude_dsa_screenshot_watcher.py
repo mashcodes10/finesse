@@ -176,6 +176,7 @@ class ClaudeDSAScreenshotWatcher:
         
         # Configuration
         self.bucket_name = "screenshot-bucket"
+        self.screenshot_folder = "claude-screenshots/"  # New folder for Claude processing
         self.processed_dir = Path("/tmp/claude_dsa_solutions")
         self.processed_dir.mkdir(exist_ok=True)
         
@@ -228,11 +229,11 @@ class ClaudeDSAScreenshotWatcher:
     def get_new_screenshots(self) -> List[str]:
         """Get list of new screenshots from Oracle Cloud bucket"""
         try:
-            # List objects in screenshots/ prefix
+            # List objects in claude-screenshots/ prefix
             list_objects_response = self.object_storage.list_objects(
                 namespace_name=self.namespace,
                 bucket_name=self.bucket_name,
-                prefix="screenshots/",
+                prefix=self.screenshot_folder,
                 fields="name,timeCreated"
             )
             
@@ -663,7 +664,7 @@ The solution includes multiple approaches and comprehensive test cases.
             response = self.object_storage.list_objects(
                 namespace_name=self.namespace,
                 bucket_name=self.bucket_name,
-                prefix="screenshots/",
+                prefix=self.screenshot_folder,
                 fields="name"
             )
             
@@ -686,6 +687,7 @@ The solution includes multiple approaches and comprehensive test cases.
             self.mark_existing_as_processed()
         
         logger.info(f"Starting Claude DSA Screenshot Watcher (polling every {poll_interval} seconds)")
+        logger.info(f"📸 Monitoring folder: {self.screenshot_folder} in bucket: {self.bucket_name}")
         logger.info("📸 Waiting for NEW coding problem screenshots to be uploaded...")
         logger.info(f"🔥 Batch processing: Will process {self.batch_size} screenshots together for comprehensive DSA solutions with Claude 4 Sonnet")
         
