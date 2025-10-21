@@ -199,6 +199,9 @@ class GPT4oDSAScreenshotWatcher:
         self.notifier = NotificationSender()
         
         logger.info("GPT-4o DSA Screenshot Watcher initialized successfully - Ready for 2-screenshot batch processing")
+        logger.info(f"Configuration: Bucket={self.bucket_name}, Folder={self.screenshot_folder}, Namespace={self.namespace}")
+        logger.info(f"State file: {self.state_file}")
+        logger.info(f"Solutions directory: {self.processed_dir}")
     
     def _load_processed_state(self):
         """Load the list of already processed files"""
@@ -227,6 +230,8 @@ class GPT4oDSAScreenshotWatcher:
     def get_new_screenshots(self) -> List[str]:
         """Get list of new screenshots from Oracle Cloud bucket"""
         try:
+            logger.debug(f"Checking for screenshots in bucket: {self.bucket_name}, folder: {self.screenshot_folder}")
+            
             # List objects in claude-screenshots/ prefix
             list_objects_response = self.object_storage.list_objects(
                 namespace_name=self.namespace,
@@ -235,26 +240,40 @@ class GPT4oDSAScreenshotWatcher:
                 fields="name,timeCreated"
             )
             
+            # Debug: Log all objects found
+            total_objects = len(list_objects_response.data.objects) if list_objects_response.data.objects else 0
+            logger.info(f"Total objects found in {self.screenshot_folder}: {total_objects}")
+            
             new_screenshots = []
+            processed_count = 0
+            non_png_count = 0
             
             for obj in list_objects_response.data.objects:
                 object_name = obj.name
+                logger.debug(f"Found object: {object_name}")
                 
                 # Skip if already processed
                 if object_name in self.processed_files:
+                    processed_count += 1
+                    logger.debug(f"Skipping already processed: {object_name}")
                     continue
                 
                 # Only process PNG files
                 if not object_name.lower().endswith('.png'):
+                    non_png_count += 1
+                    logger.debug(f"Skipping non-PNG file: {object_name}")
                     continue
                 
                 new_screenshots.append(object_name)
+                logger.debug(f"Added to new screenshots: {object_name}")
             
-            logger.info(f"Found {len(new_screenshots)} new screenshots")
+            logger.info(f"Screenshot analysis: Total={total_objects}, Already processed={processed_count}, Non-PNG={non_png_count}, New={len(new_screenshots)}")
+            logger.info(f"Found {len(new_screenshots)} new screenshots: {new_screenshots}")
             return new_screenshots
             
         except Exception as e:
             logger.error(f"Error listing objects: {e}")
+            logger.error(f"Bucket: {self.bucket_name}, Folder: {self.screenshot_folder}, Namespace: {self.namespace}")
             return []
     
     def download_screenshot(self, object_name: str) -> Optional[bytes]:
@@ -756,8 +775,60 @@ The solution includes multiple approaches and comprehensive test cases.
                 logger.error(f"Unexpected error in main loop: {e}")
                 time.sleep(60)  # Wait 1 minute before retrying
 
+def debug_screenshots():
+    """Debug function to check what screenshots are available"""
+    try:
+        watcher = GPT4oDSAScreenshotWatcher()
+        print(f"🔍 Debugging screenshot detection...")
+        print(f"📁 Bucket: {watcher.bucket_name}")
+        print(f"📂 Folder: {watcher.screenshot_folder}")
+        print(f"🌐 Namespace: {watcher.namespace}")
+        
+        # Get all screenshots (including processed ones)
+        try:
+            list_objects_response = watcher.object_storage.list_objects(
+                namespace_name=watcher.namespace,
+                bucket_name=watcher.bucket_name,
+                prefix=watcher.screenshot_folder,
+                fields="name,timeCreated"
+            )
+            
+            if list_objects_response.data.objects:
+                print(f"\n📸 Found {len(list_objects_response.data.objects)} total objects:")
+                for i, obj in enumerate(list_objects_response.data.objects, 1):
+                    status = "✅ NEW" if obj.name not in watcher.processed_files else "⏭️ PROCESSED"
+                    file_type = "🖼️ PNG" if obj.name.lower().endswith('.png') else "📄 OTHER"
+                    print(f"   {i}. {obj.name} - {file_type} - {status}")
+            else:
+                print("❌ No objects found in the specified folder!")
+                print("💡 Make sure screenshots are being uploaded to the correct folder.")
+                
+        except Exception as e:
+            print(f"❌ Error accessing Oracle Cloud: {e}")
+            
+        # Check processed state
+        print(f"\n📋 Processed files state:")
+        print(f"   State file: {watcher.state_file}")
+        print(f"   Processed count: {len(watcher.processed_files)}")
+        if watcher.processed_files:
+            print("   Processed files:")
+            for f in list(watcher.processed_files)[:5]:  # Show first 5
+                print(f"     - {f}")
+            if len(watcher.processed_files) > 5:
+                print(f"     ... and {len(watcher.processed_files) - 5} more")
+                
+    except Exception as e:
+        print(f"❌ Debug failed: {e}")
+
 def main():
     """Main function"""
+    import sys
+    
+    # Check for debug flag
+    if len(sys.argv) > 1 and sys.argv[1] == "--debug":
+        debug_screenshots()
+        return
+    
     try:
         watcher = GPT4oDSAScreenshotWatcher()
         watcher.run_dsa_watcher(poll_interval=30)  # Poll every 30 seconds
@@ -769,6 +840,8 @@ def main():
         print("- TELEGRAM_BOT_TOKEN: (optional) Telegram bot token")
         print("- TELEGRAM_CHAT_ID: (optional) Telegram chat ID")
         print("- NTFY_TOPIC: (optional) ntfy.sh topic for notifications")
+        print("\nDebug mode:")
+        print("- python gpt4o_dsa_screenshot_watcher.py --debug  # Check screenshot detection")
 
 if __name__ == "__main__":
     main()
