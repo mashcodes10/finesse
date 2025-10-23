@@ -176,7 +176,7 @@ class GPT4oDSAScreenshotWatcher:
         
         # Configuration
         self.bucket_name = "screenshot-bucket"
-        self.screenshot_folder = "claude-screenshots/"  # Same folder as Claude watcher
+        self.screenshot_folder = "gpt4o-screenshots/"  # Dedicated folder for GPT-4o processing
         self.processed_dir = Path("/tmp/gpt4o_dsa_solutions")
         self.processed_dir.mkdir(exist_ok=True)
         
@@ -232,7 +232,7 @@ class GPT4oDSAScreenshotWatcher:
         try:
             logger.debug(f"Checking for screenshots in bucket: {self.bucket_name}, folder: {self.screenshot_folder}")
             
-            # List objects in claude-screenshots/ prefix
+            # List objects in gpt4o-screenshots/ prefix
             list_objects_response = self.object_storage.list_objects(
                 namespace_name=self.namespace,
                 bucket_name=self.bucket_name,

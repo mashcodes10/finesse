@@ -148,7 +148,7 @@ def main():
         print("\nNext steps:")
         print("1. Run the main GPT-4o DSA screenshot watcher:")
         print("   python gpt4o_dsa_screenshot_watcher.py")
-        print("2. Upload screenshots to Oracle Cloud Object Storage in 'claude-screenshots/' folder")
+        print("2. Upload screenshots to Oracle Cloud Object Storage in 'gpt4o-screenshots/' folder")
         print("3. The watcher will process them in batches of 2")
         
         # Check environment variables

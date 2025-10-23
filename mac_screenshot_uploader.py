@@ -42,7 +42,7 @@ class ScreenshotUploader:
         
         # Configuration - Update these values
         self.bucket_name = "screenshot-bucket"
-        self.upload_folder = "claude-screenshots/"  # New folder for Claude processing
+        self.upload_folder = "gpt4o-screenshots/"  # New folder for GPT-4o processing
         self.screenshot_dir = Path.home() / "Screenshots" / "auto_screenshots"
         
         # Create screenshot directory if it doesn't exist
