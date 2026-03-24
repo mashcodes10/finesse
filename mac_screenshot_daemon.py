@@ -9,10 +9,15 @@ import sys
 import subprocess
 import time
 import datetime
+import threading
 import oci
 import logging
 from pathlib import Path
 import signal
+
+RESPONSE_OBJECT   = "responses/latest_response.txt"
+LOCAL_RESPONSE    = "/tmp/finesse_latest_response.txt"
+RESPONSE_POLL_SEC = 5   # How often to check Oracle Cloud for a new response
 
 # Configure logging for daemon mode
 log_file = '/tmp/screenshot_daemon.log'
@@ -37,7 +42,7 @@ class SilentScreenshotDaemon:
         
         # Configuration
         self.bucket_name = "screenshot-bucket"
-        self.upload_folder = "gpt4o-screenshots/"  # New folder for GPT-4o processing
+        self.upload_folder = "quiz-screenshots/"   # Folder watched by quiz_answer_watcher.py
         self.screenshot_dir = Path.home() / "Screenshots" / "auto_screenshots"
         
         # Create screenshot directory if it doesn't exist
@@ -213,6 +218,40 @@ class SilentScreenshotDaemon:
         self.remove_pid_file()
         sys.exit(0)
 
+    # ── Response syncer ───────────────────────────────────────────────────────
+
+    def _response_sync_loop(self):
+        """
+        Background thread: polls Oracle Cloud every RESPONSE_POLL_SEC seconds
+        for responses/latest_response.txt and saves it locally so overlay_display.py
+        can read it without needing cloud credentials.
+        """
+        last_etag = None
+        while True:
+            try:
+                head = self.object_storage.head_object(
+                    namespace_name=self.namespace,
+                    bucket_name=self.bucket_name,
+                    object_name=RESPONSE_OBJECT
+                )
+                etag = head.headers.get('etag', '')
+                if etag != last_etag:
+                    resp = self.object_storage.get_object(
+                        namespace_name=self.namespace,
+                        bucket_name=self.bucket_name,
+                        object_name=RESPONSE_OBJECT
+                    )
+                    content = resp.data.content
+                    if isinstance(content, bytes):
+                        content = content.decode('utf-8')
+                    Path(LOCAL_RESPONSE).write_text(content, encoding='utf-8')
+                    last_etag = etag
+                    logger.info(f"Response synced → {LOCAL_RESPONSE}")
+            except Exception:
+                # Object may not exist yet — that's fine, keep polling silently
+                pass
+            time.sleep(RESPONSE_POLL_SEC)
+
     def run_daemon(self):
         """Run the daemon"""
         # Set up signal handlers
@@ -221,7 +260,12 @@ class SilentScreenshotDaemon:
         
         # Write PID file
         self.write_pid_file()
-        
+
+        # Start response syncer in background thread
+        sync_thread = threading.Thread(target=self._response_sync_loop, daemon=True)
+        sync_thread.start()
+        logger.info(f"Response syncer started — polling every {RESPONSE_POLL_SEC}s for {RESPONSE_OBJECT}")
+
         logger.info("Silent screenshot daemon started")
         logger.info(f"PID: {os.getpid()}")
         logger.info(f"Log file: {log_file}")
