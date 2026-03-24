@@ -2,124 +2,134 @@
 """
 Finesse Overlay Display
 ─────────────────────────────────────────────────────────────────────
-Hold Ctrl+\\ → overlay appears showing the latest quiz answers
-Release Ctrl+\\ → overlay disappears
+Hold Option+. → overlay appears showing the latest quiz answers
+Release Option+. → overlay disappears
 
 Requires:
-  - pyobjc-framework-Quartz  (already in requirements_mac.txt)
-  - tkinter                  (Python standard library on macOS)
+  - pyobjc-framework-Cocoa   (in requirements_mac.txt)
+  - pyobjc-framework-Quartz  (in requirements_mac.txt)
 
 First run: macOS will ask for Accessibility permission.
-  System Preferences → Privacy & Security → Accessibility → add Terminal (or your Python app)
+  System Settings → Privacy & Security → Accessibility → add Terminal
 
 Response file: /tmp/finesse_latest_response.txt
-  (written by mac_screenshot_daemon.py polling Oracle Cloud)
 """
 
-import sys
+import signal
 import threading
-import tkinter as tk
 from pathlib import Path
 
+signal.signal(signal.SIGQUIT, signal.SIG_IGN)
+
 RESPONSE_FILE = '/tmp/finesse_latest_response.txt'
-BACKSLASH_KEYCODE = 42       # macOS virtual keycode for backslash
-CTRL_FLAG = 0x40000          # kCGEventFlagMaskControl
+PERIOD_KEYCODE = 47       # macOS virtual keycode for period (.)
+OPTION_FLAG    = 0x80000  # kCGEventFlagMaskAlternate
+
+import AppKit
+import objc
+from Foundation import NSObject, NSMakeRect, NSAttributedString
+
+# Integer constants (avoids version-specific AppKit symbol lookups)
+NSWindowStyleMaskBorderless          = 0
+NSWindowStyleMaskNonactivatingPanel  = 1 << 7   # 128
+NSBackingStoreBuffered               = 2
+NSFloatingWindowLevel                = 3
+NSViewWidthSizable                   = 2
+NSViewHeightSizable                  = 16
+NSNoBorder                           = 0
+NSApplicationActivationPolicyAccessory = 1
+
+NSWindowCollectionBehaviorCanJoinAllSpaces    = 1 << 0
+NSWindowCollectionBehaviorStationary         = 1 << 4
+NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
+
+FULLSCREEN_BEHAVIOR = (
+    NSWindowCollectionBehaviorCanJoinAllSpaces    |
+    NSWindowCollectionBehaviorStationary         |
+    NSWindowCollectionBehaviorFullScreenAuxiliary
+)
 
 
-class OverlayApp:
-    def __init__(self):
-        # Hidden root window (tkinter requires one)
-        self.root = tk.Tk()
-        self.root.withdraw()
-        self.root.title("Finesse Overlay Root")
+# ── Overlay panel ──────────────────────────────────────────────────────────────
 
-        self._build_overlay()
-        self._start_key_listener()
+class OverlayPanel(NSObject):
 
-    # ── Overlay window ────────────────────────────────────────────────────────
+    def init(self):
+        self = objc.super(OverlayPanel, self).init()
+        if self is None:
+            return None
+        self._build()
+        return self
 
-    def _build_overlay(self):
-        win = tk.Toplevel(self.root)
-        win.withdraw()
-        win.overrideredirect(True)          # No title bar / decorations
-        win.attributes('-topmost', True)    # Float above all windows
-        win.attributes('-alpha', 0.93)
-        win.configure(bg='#0d1117')
+    def _build(self):
+        screen = AppKit.NSScreen.mainScreen()
+        sf = screen.frame()
+        sw, sh = sf.size.width, sf.size.height
 
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        w  = int(sw * 0.52)
-        h  = int(sh * 0.52)
-        x  = (sw - w) // 2
-        y  = int(sh * 0.09)
-        win.geometry(f'{w}x{h}+{x}+{y}')
+        w = sw * 0.52
+        h = sh * 0.52
+        x = (sw - w) / 2
+        y = sh * 0.09
 
-        # ── Header bar ────────────────────────────────────────────────────────
-        header = tk.Frame(win, bg='#161b22', pady=8, padx=16)
-        header.pack(fill='x')
-
-        tk.Label(
-            header,
-            text=' Quiz Answers',
-            font=('Helvetica Neue', 15, 'bold'),
-            fg='#58a6ff',
-            bg='#161b22'
-        ).pack(side='left')
-
-        tk.Label(
-            header,
-            text='Hold Ctrl+\\  •  release to hide',
-            font=('Helvetica Neue', 11),
-            fg='#6e7681',
-            bg='#161b22'
-        ).pack(side='right')
-
-        # Separator line
-        tk.Frame(win, bg='#30363d', height=1).pack(fill='x')
-
-        # ── Text area ─────────────────────────────────────────────────────────
-        text_frame = tk.Frame(win, bg='#0d1117')
-        text_frame.pack(fill='both', expand=True)
-
-        scrollbar = tk.Scrollbar(text_frame, bg='#30363d', troughcolor='#0d1117',
-                                  relief='flat', bd=0)
-        scrollbar.pack(side='right', fill='y')
-
-        self.text = tk.Text(
-            text_frame,
-            font=('Menlo', 14),
-            fg='#e6edf3',
-            bg='#0d1117',
-            wrap='word',
-            relief='flat',
-            bd=0,
-            padx=22,
-            pady=18,
-            state='disabled',
-            yscrollcommand=scrollbar.set,
-            selectbackground='#1f6feb',
-            insertbackground='white',
-            spacing1=2,
-            spacing2=2,
-            spacing3=4,
+        self._panel = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, w, h),
+            NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
+            NSBackingStoreBuffered,
+            False,
         )
-        self.text.pack(side='left', fill='both', expand=True)
-        scrollbar.config(command=self.text.yview)
+        self._panel.setCollectionBehavior_(FULLSCREEN_BEHAVIOR)
+        self._panel.setLevel_(NSFloatingWindowLevel)
+        self._panel.setOpaque_(False)
+        self._panel.setAlphaValue_(0.75)
+        self._panel.setBackgroundColor_(
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(0.051, 0.067, 0.090, 1.0)
+        )
+        self._panel.setHasShadow_(True)
 
-        # Tag for answer highlight (numbers bold)
-        self.text.tag_configure('answer_num', foreground='#58a6ff',
-                                 font=('Menlo', 14, 'bold'))
+        content = self._panel.contentView()
+        bounds  = content.bounds()
 
-        self.win = win
+        scroll = AppKit.NSScrollView.alloc().initWithFrame_(bounds)
+        scroll.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        scroll.setHasVerticalScroller_(True)
+        scroll.setBorderType_(NSNoBorder)
+        scroll.setDrawsBackground_(False)
 
-    # ── Show / Hide ───────────────────────────────────────────────────────────
+        tv = AppKit.NSTextView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, bounds.size.width, bounds.size.height)
+        )
+        tv.setEditable_(False)
+        tv.setSelectable_(True)
+        tv.setDrawsBackground_(True)
+        tv.setBackgroundColor_(
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(0.051, 0.067, 0.090, 1.0)
+        )
+        tv.setFont_(AppKit.NSFont.fontWithName_size_('Menlo', 14))
+        tv.setTextColor_(
+            AppKit.NSColor.colorWithRed_green_blue_alpha_(0.902, 0.929, 0.953, 1.0)
+        )
+        tv.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        tv.textContainer().setLineFragmentPadding_(22)
 
-    def _read_response(self) -> str:
+        scroll.setDocumentView_(tv)
+        content.addSubview_(scroll)
+
+        self._tv = tv
+
+    def show(self):
+        self._tv.setString_(self._read_response())
+        self._tv.scrollToBeginningOfDocument_(None)
+        self._panel.orderFrontRegardless()
+
+    def hide(self):
+        self._panel.orderOut_(None)
+
+    def _read_response(self):
         try:
             p = Path(RESPONSE_FILE)
             if p.exists():
-                content = p.read_text(encoding='utf-8').strip()
-                return content if content else '(Response file is empty)'
+                text = p.read_text(encoding='utf-8').strip()
+                return text if text else '(Response file is empty)'
             return (
                 '(No response yet)\n\n'
                 'Waiting for quiz answers from VM...\n'
@@ -132,80 +142,70 @@ class OverlayApp:
         except Exception as e:
             return f'(Error reading response: {e})'
 
-    def show(self):
-        """Called from main thread — refresh content and show window."""
-        content = self._read_response()
-        self.text.configure(state='normal')
-        self.text.delete('1.0', 'end')
-        self.text.insert('1.0', content)
-        self.text.configure(state='disabled')
-        self.text.yview_moveto(0)   # Scroll to top
-        self.win.deiconify()
-        self.win.lift()
 
-    def hide(self):
-        """Called from main thread — hide window."""
-        self.win.withdraw()
+# ── Key listener ───────────────────────────────────────────────────────────────
 
-    # ── Keyboard listener (background thread) ─────────────────────────────────
+class KeyListener(NSObject):
 
-    def _start_key_listener(self):
-        t = threading.Thread(target=self._key_listener_loop, daemon=True)
-        t.start()
+    def initWithOverlay_(self, overlay):
+        self = objc.super(KeyListener, self).init()
+        if self is None:
+            return None
+        self._overlay = overlay
+        return self
 
-    def _key_listener_loop(self):
+    def start(self):
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def _loop(self):
         try:
             import Quartz
             import CoreFoundation
         except ImportError:
             print("ERROR: pyobjc-framework-Quartz not installed.")
-            print("Run: pip install pyobjc-framework-Quartz")
             return
 
-        key_held = [False]
+        held    = [False]
+        overlay = self._overlay
 
         def callback(proxy, event_type, event, refcon):
             keycode = Quartz.CGEventGetIntegerValueField(
                 event, Quartz.kCGKeyboardEventKeycode
             )
-            flags = Quartz.CGEventGetFlags(event)
-            ctrl  = bool(flags & CTRL_FLAG)
+            flags  = Quartz.CGEventGetFlags(event)
+            option = bool(flags & OPTION_FLAG)
 
-            if event_type == Quartz.kCGEventKeyDown and keycode == BACKSLASH_KEYCODE and ctrl:
-                if not key_held[0]:
-                    key_held[0] = True
-                    # Schedule show() on the main (tkinter) thread
-                    self.root.after(0, self.show)
-
-            elif event_type == Quartz.kCGEventKeyUp and keycode == BACKSLASH_KEYCODE:
-                if key_held[0]:
-                    key_held[0] = False
-                    # Schedule hide() on the main (tkinter) thread
-                    self.root.after(0, self.hide)
-
-            return event  # Pass event through (don't suppress)
+            if event_type == Quartz.kCGEventKeyDown and keycode == PERIOD_KEYCODE and option:
+                if not held[0]:
+                    held[0] = True
+                    overlay.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        'show', None, False
+                    )
+            elif event_type == Quartz.kCGEventKeyUp and keycode == PERIOD_KEYCODE:
+                if held[0]:
+                    held[0] = False
+                    overlay.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        'hide', None, False
+                    )
+            return event
 
         mask = (
             Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown) |
             Quartz.CGEventMaskBit(Quartz.kCGEventKeyUp)
         )
         tap = Quartz.CGEventTapCreate(
-            Quartz.kCGSessionEventTap,
+            Quartz.kCGHIDEventTap,
             Quartz.kCGHeadInsertEventTap,
             Quartz.kCGEventTapOptionDefault,
             mask,
             callback,
-            None
+            None,
         )
-
         if tap is None:
             print()
             print("=" * 60)
             print("ERROR: Could not create keyboard event tap.")
-            print()
-            print("Fix: Grant Accessibility permission to Terminal (or Python):")
-            print("  System Preferences → Privacy & Security → Accessibility")
-            print("  Click + and add Terminal.app (or your Python executable)")
+            print("Fix: System Settings → Privacy & Security → Accessibility")
             print("=" * 60)
             print()
             return
@@ -214,19 +214,31 @@ class OverlayApp:
         loop   = CoreFoundation.CFRunLoopGetCurrent()
         CoreFoundation.CFRunLoopAddSource(loop, source, CoreFoundation.kCFRunLoopCommonModes)
         Quartz.CGEventTapEnable(tap, True)
-
-        print(f"Key listener active — hold Ctrl+\\ to view quiz answers")
-        print(f"Response file: {RESPONSE_FILE}")
+        print("Key listener active — hold Option+. to view answers")
         CoreFoundation.CFRunLoopRun()
 
-    # ── Entry point ───────────────────────────────────────────────────────────
 
-    def run(self):
-        print("Finesse Overlay Display started.")
-        print(f"Hold Ctrl+\\ to view answers  |  Release to hide")
-        print(f"Reading from: {RESPONSE_FILE}")
-        self.root.mainloop()
+# ── App delegate ───────────────────────────────────────────────────────────────
 
+class AppDelegate(NSObject):
+
+    def applicationDidFinishLaunching_(self, _notification):
+        self._overlay  = OverlayPanel.alloc().init()
+        self._listener = KeyListener.alloc().initWithOverlay_(self._overlay)
+        self._listener.start()
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    OverlayApp().run()
+    app = AppKit.NSApplication.sharedApplication()
+    app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+
+    delegate = AppDelegate.alloc().init()
+    app.setDelegate_(delegate)
+
+    print("Finesse Overlay Display started.")
+    print("Hold Option+. to view answers  |  Release to hide")
+    print(f"Reading from: {RESPONSE_FILE}")
+
+    app.run()
