@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/md.mashiurrahmankhan/Downloads/finesse/mac_screenshot_daemon.py</string>
+        <string>/Users/md.mashiurrahmankhan/Downloads/finesse/src/capture/daemon.py</string>
         <string>start</string>
     </array>
 

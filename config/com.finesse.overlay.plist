@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/md.mashiurrahmankhan/Downloads/finesse/overlay_display.py</string>
+        <string>/Users/md.mashiurrahmankhan/Downloads/finesse/src/overlay/display.py</string>
     </array>
 
     <key>RunAtLoad</key>

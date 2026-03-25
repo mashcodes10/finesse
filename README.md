@@ -1,178 +1,182 @@
-# 🖥️ Mac Screenshot Code Analyzer
+# Finesse
 
-An automated pipeline that captures your Mac screenshots, uploads them to Oracle Cloud, extracts Python code using OpenAI Vision API, and delivers the results to your phone in real-time.
+An AI-powered screen analysis pipeline for macOS. Captures screen content, processes it through vision AI models (Claude, GPT-4o), and displays results via a real-time overlay — backed by Oracle Cloud infrastructure.
 
-## 🌟 Features
+## Overview
 
-- **🤫 Silent Screenshots**: Captures your Mac screen every 5 minutes without sound
-- **☁️ Cloud Storage**: Automatic upload to Oracle Cloud Object Storage
-- **🤖 AI Code Extraction**: Uses OpenAI's Vision API to extract only Python code
-- **📱 Real-time Notifications**: Delivers extracted code to your phone via ntfy.sh or Telegram
-- **🆓 Cost-Effective**: Runs entirely on Oracle Cloud Free Tier
+Finesse demonstrates how to build an end-to-end visual AI pipeline:
 
-## 🏗️ Architecture
+- **Screen capture daemon** — captures screen regions on macOS using Quartz, triggered by cursor position
+- **Cloud upload** — pushes captures to Oracle Cloud Object Storage
+- **AI processing** — Oracle VM watchers analyze images with Claude or GPT-4o Vision
+- **Overlay display** — results appear as a fullscreen overlay (toggle with `Option+.`)
+- **Notifications** — delivers results to your phone via Telegram or ntfy.sh
+
+## Architecture
 
 ```
-[Mac] → [Screenshot] → [Oracle Cloud Storage] → [Oracle VM] → [OpenAI Vision] → [Phone]
-   ↓        Every 5min         ↓                    Polls         ↓              ↓
-Screenshots  Silent capture     Bucket            Watcher      Code Extract   Notifications
+Mac                         Oracle Cloud              Oracle VM
+────────────────────────    ──────────────────────    ──────────────────
+Cursor → trigger zone  →→  Object Storage bucket  →→  AI pipeline
+daemon.py captures          screenshot-bucket/          (Claude / GPT-4o)
+screenshot silently                                      ↓
+                                                    Response file
+overlay.py reads  ←←←←←←  responses/ folder  ←←←←  uploaded back
+Option+. shows result
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 finesse/
-├── mac_screenshot_uploader.py    # Mac screenshot automation
-├── screenshot_watcher.py          # Oracle VM watcher script
-├── requirements_mac.txt           # Mac dependencies
-├── requirements_vm.txt            # VM dependencies
-├── install_mac.sh                 # Mac installation script
-├── install_vm.sh                  # VM installation script
-├── oracle_cloud_setup.md          # Oracle Cloud configuration guide
-├── phone_notification_setup.md    # Phone notification setup
-├── DEPLOYMENT_GUIDE.md            # Complete deployment instructions
-└── README.md                      # This file
+├── src/
+│   ├── capture/
+│   │   ├── daemon.py         # Background capture daemon (runs as LaunchAgent)
+│   │   └── uploader.py       # Screenshot uploader with cursor-zone triggers
+│   ├── overlay/
+│   │   └── display.py        # Fullscreen AI response overlay (Option+.)
+│   └── pipeline/             # Oracle VM AI processing pipelines
+│       ├── vision_pipeline.py    # GPT-4o vision pipeline
+│       ├── content_analyzer.py   # Batch content analysis (Claude, 3-image batches)
+│       ├── question_processor.py # General Q&A processor (Claude)
+│       ├── code_analyzer.py      # Code analysis pipeline (GPT-4o, 4-image batches)
+│       ├── gpt4o_analyzer.py     # GPT-4o specialized analyzer
+│       ├── claude_analyzer.py    # Claude specialized analyzer
+│       ├── alt_vision.py         # Alternative vision implementation
+│       └── local_pipeline.py     # Local (no cloud) pipeline
+├── config/
+│   ├── com.finesse.daemon.plist  # LaunchAgent: capture daemon
+│   └── com.finesse.overlay.plist # LaunchAgent: overlay display
+├── scripts/
+│   ├── service.sh            # Install/start/stop/status LaunchAgents
+│   ├── start.sh              # Quick start script
+│   ├── install_mac.sh        # Mac dependency installer
+│   ├── install_vm.sh         # Oracle VM installer
+│   ├── install_dependencies.sh
+│   ├── setup_oracle_vm.sh
+│   └── run_pipeline.sh       # Run code analysis pipeline
+├── tests/                    # Test suite
+├── utils/                    # Helper utilities
+│   ├── manual_trigger.py     # Manually trigger a capture
+│   ├── reset_state.py        # Reset watcher state
+│   └── create_fixture.py     # Create test fixtures
+├── docs/                     # Setup guides
+├── requirements_mac.txt
+└── requirements_vm.txt
 ```
 
-## 🚀 Quick Start
+## Requirements
 
-### 1. Mac Setup
+### Mac
+- macOS with Python 3.9+
+- Oracle Cloud credentials in `~/.oci/config`
+- Screen Recording permission (System Settings → Privacy & Security)
+
+### Oracle VM
+- Oracle Cloud Free Tier (E2.1.Micro instance works fine)
+- `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`
+
+## Quick Start
+
+### 1. Install Mac dependencies
 ```bash
-cd finesse
-chmod +x install_mac.sh
-./install_mac.sh
+bash scripts/install_mac.sh
 ```
 
-### 2. Oracle Cloud Setup
-Follow the detailed instructions in `oracle_cloud_setup.md`
+### 2. Configure Oracle Cloud
+Follow [docs/oracle_cloud.md](docs/oracle_cloud.md) to create an Object Storage bucket and configure `~/.oci/config`.
 
-### 3. Oracle VM Setup
+### 3. Install services
 ```bash
-# On your Oracle VM
-git clone <repo-url> finesse
-cd finesse
-chmod +x install_vm.sh
-./install_vm.sh
+bash scripts/service.sh install
 ```
 
-### 4. Phone Notifications
-Follow the setup guide in `phone_notification_setup.md`
+Registers two LaunchAgents that auto-start on login:
+- **com.finesse.daemon** — capture daemon (`src/capture/daemon.py`)
+- **com.finesse.overlay** — result overlay (`src/overlay/display.py`)
 
-### 5. Start the Pipeline
+### 4. Set up Oracle VM pipeline
+Follow [docs/oracle_vm.md](docs/oracle_vm.md), then start a pipeline:
 ```bash
-# On Mac
-python3 mac_screenshot_uploader.py
-
-# On Oracle VM (automatic via systemd)
-sudo systemctl start screenshot-watcher
+python3 src/pipeline/content_analyzer.py
+# or
+python3 src/pipeline/vision_pipeline.py
 ```
 
-## 📋 Prerequisites
+### 5. Phone notifications (optional)
+Follow [docs/notifications.md](docs/notifications.md) to configure Telegram or ntfy.sh.
 
-- **Mac**: macOS 10.14+ with Python 3.7+
-- **Oracle Cloud**: Free tier account
-- **OpenAI**: API key with GPT-4 Vision access
-- **Phone**: ntfy app or Telegram
+## Pipelines
 
-## 🔧 Configuration
+| Pipeline | File | Model | Description |
+|---|---|---|---|
+| Vision pipeline | `vision_pipeline.py` | GPT-4o | General image-to-text analysis |
+| Content analyzer | `content_analyzer.py` | Claude | Batch content extraction (3 images) |
+| Question processor | `question_processor.py` | Claude | Open-ended Q&A from screen |
+| Code analyzer | `code_analyzer.py` | GPT-4o | Code analysis (4-image batches) |
+| Claude analyzer | `claude_analyzer.py` | Claude | Code analysis via Claude |
 
-### Environment Variables (Oracle VM)
+## Service Management
+
 ```bash
-export OPENAI_API_KEY=sk-your-openai-api-key
-export TELEGRAM_BOT_TOKEN=your-telegram-bot-token  # Optional
-export TELEGRAM_CHAT_ID=your-telegram-chat-id      # Optional
-export NTFY_TOPIC=your-unique-ntfy-topic          # Optional
+bash scripts/service.sh install    # install + auto-start on login
+bash scripts/service.sh start      # start now
+bash scripts/service.sh stop       # stop
+bash scripts/service.sh status     # check status
+bash scripts/service.sh uninstall  # remove from LaunchAgents
 ```
 
-### Oracle CLI Configuration (Mac)
+Logs:
+```
+/tmp/finesse_daemon_stderr.log
+/tmp/finesse_overlay_stderr.log
+```
+
+## Configuration
+
+### Mac — Oracle CLI
 ```bash
 oci setup config
-# Follow prompts to configure API access
 ```
 
-## 📊 Monitoring
-
-### Check Mac Screenshot Status
+### Oracle VM — environment variables
 ```bash
-tail -f /tmp/screenshot_uploader.log
+export ANTHROPIC_API_KEY=your-key
+export OPENAI_API_KEY=your-key          # optional
+export TELEGRAM_BOT_TOKEN=your-token    # optional
+export TELEGRAM_CHAT_ID=your-chat-id   # optional
+export NTFY_TOPIC=your-unique-topic    # optional
 ```
 
-### Check Oracle VM Watcher Status
-```bash
-sudo systemctl status screenshot-watcher
-sudo journalctl -u screenshot-watcher -f
-```
+## Tech Stack
 
-## 🛠️ Troubleshooting
+| Component | Technology |
+|---|---|
+| macOS capture | Quartz / Cocoa (pyobjc) |
+| Cloud storage | Oracle Cloud Object Storage |
+| AI vision | Anthropic Claude, OpenAI GPT-4o |
+| Notifications | Telegram Bot API, ntfy.sh |
+| Mac services | launchd (LaunchAgents) |
+| VM services | systemd |
 
-### Common Issues
+## Docs
 
-1. **Permission Denied (Mac)**
-   - Grant screen recording permission: System Preferences → Security & Privacy → Privacy → Screen Recording
+- [Deployment guide](docs/deployment.md)
+- [Oracle Cloud setup](docs/oracle_cloud.md)
+- [Oracle VM setup](docs/oracle_vm.md)
+- [Background services](docs/background_services.md)
+- [Notifications](docs/notifications.md)
+- [Trigger zones](docs/trigger_zones.md)
 
-2. **Oracle Upload Fails**
-   - Check API key configuration
-   - Verify internet connection
-   - Confirm bucket exists
+## Cost
 
-3. **No Notifications**
-   - Verify phone notification setup
-   - Check Oracle VM internet access
-   - Confirm OpenAI API key is valid
+Runs entirely on Oracle Cloud Free Tier:
+- 20 GB Object Storage
+- VM.Standard.E2.1.Micro compute
+- 10 TB outbound data/month
 
-4. **Service Won't Start (VM)**
-   - Check environment variables in systemd service
-   - Verify Python dependencies are installed
-   - Check logs for specific error messages
+AI API costs: Claude and GPT-4o Vision are ~$0.01–0.03 per image depending on resolution.
 
-### Log Locations
-- **Mac**: `/tmp/screenshot_uploader.log`
-- **Oracle VM**: `sudo journalctl -u screenshot-watcher`
+## License
 
-## 💰 Cost Considerations
-
-### Oracle Cloud Free Tier
-- ✅ 20GB Object Storage
-- ✅ VM.Standard.E2.1.Micro compute
-- ✅ 10TB outbound data transfer/month
-
-### OpenAI API Costs
-- GPT-4 Vision: ~$0.01-0.03 per image
-- Monitor usage in OpenAI dashboard
-
-## 🔒 Security Notes
-
-- **API Keys**: Store securely, never commit to version control
-- **Screenshots**: May contain sensitive information
-- **ntfy Topics**: Use unique, hard-to-guess names (topics are public)
-- **SSH Access**: Use key-based authentication only
-
-## 🎯 Use Cases
-
-- **Code Review**: Automatically capture and analyze code snippets
-- **Learning**: Track coding progress and patterns
-- **Documentation**: Extract code examples for tutorials
-- **Debugging**: Capture error states and problematic code
-- **Sharing**: Quickly send formatted code to mobile devices
-
-## 🔄 Workflow Example
-
-1. **14:00** - Write Python function in VS Code
-2. **14:05** - Mac takes silent screenshot
-3. **14:05** - Screenshot uploaded to Oracle Cloud
-4. **14:05** - Oracle VM detects new screenshot
-5. **14:06** - OpenAI extracts Python code
-6. **14:06** - Code saved as `.py` file on VM
-7. **14:06** - Phone receives notification with formatted code
-
-## 🤝 Contributing
-
-Feel free to submit issues, feature requests, or pull requests to improve the system.
-
-## 📜 License
-
-This project is open source and available under the MIT License.
-
----
-
-**Happy Coding!** 🐍✨
+MIT

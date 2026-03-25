@@ -5,12 +5,13 @@
 PLIST_DIR="$HOME/Library/LaunchAgents"
 DAEMON_PLIST="com.finesse.daemon.plist"
 OVERLAY_PLIST="com.finesse.overlay.plist"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+CONFIG_DIR="$SCRIPT_DIR/config"
 
 install() {
     echo "Installing Finesse services..."
-    cp "$SCRIPT_DIR/$DAEMON_PLIST" "$PLIST_DIR/"
-    cp "$SCRIPT_DIR/$OVERLAY_PLIST" "$PLIST_DIR/"
+    cp "$CONFIG_DIR/$DAEMON_PLIST" "$PLIST_DIR/"
+    cp "$CONFIG_DIR/$OVERLAY_PLIST" "$PLIST_DIR/"
     launchctl load "$PLIST_DIR/$DAEMON_PLIST"
     launchctl load "$PLIST_DIR/$OVERLAY_PLIST"
     echo "Done. Finesse daemon and overlay are now running silently."
